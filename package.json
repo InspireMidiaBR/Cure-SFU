@@ -66,13 +66,13 @@
         "webpack-cli": "^5.1.4",
         "webpack-node-externals": "^3.0.0",
         "xss": "^1.0.14",
-        "yamljs": "0.3.0"
-    },
-    "devDependencies": {
+        "yamljs": "0.3.0",
         "@babel/core": "^7.23.9",
         "@babel/preset-env": "^7.23.9",
         "@babel/preset-react": "^7.23.3",
-        "@babel/register": "^7.23.7",
+        "@babel/register": "^7.23.7"
+    },
+    "devDependencies": {
         "node-fetch": "^3.3.2",
         "nodemon": "^3.0.3",
         "prettier": "3.2.5"
