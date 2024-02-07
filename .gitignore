@@ -17,3 +17,6 @@ package-lock.json
 # personal
 docker-compose.yml
 docker-push.sh
+yarn-error.log
+yarn.lock
+
