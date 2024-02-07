@@ -36,6 +36,7 @@ const qS = require('qs');
 const slackEnabled = config.slack.enabled;
 const slackSigningSecret = config.slack.signingSecret;
 const bodyParser = require('body-parser');
+const { default: App } = require('../../client/App.jsx');
 
 const app = express();
 
@@ -220,7 +221,12 @@ function startServer() {
     // set new room name and join
     app.get('/newroom', (req, res) => {
         // Renderiza o componente React para uma string
-        const reactHtml = ReactDOMServer.renderToString(<h3>oi</h3>);
+        const reactHtml = ReactDOMServer.renderToString(
+            <div id='app'>
+                <App />
+                <script src="../../dist/public/bundle_client.js" />
+            </div>
+        );
 
         // Envia a string HTML renderizada como resposta
         res.send(reactHtml);
