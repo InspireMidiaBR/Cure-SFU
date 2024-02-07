@@ -1,49 +1,8 @@
 'use strict';
 
-/*
-███████ ███████ ██████  ██    ██ ███████ ██████  
-██      ██      ██   ██ ██    ██ ██      ██   ██ 
-███████ █████   ██████  ██    ██ █████   ██████  
-     ██ ██      ██   ██  ██  ██  ██      ██   ██ 
-███████ ███████ ██   ██   ████   ███████ ██   ██                                           
 
-dependencies: {
-    @sentry/node            : https://www.npmjs.com/package/@sentry/node
-    @sentry/integrations    : https://www.npmjs.com/package/@sentry/integrations
-    axios                   : https://www.npmjs.com/package/axios
-    body-parser             : https://www.npmjs.com/package/body-parser
-    compression             : https://www.npmjs.com/package/compression
-    colors                  : https://www.npmjs.com/package/colors
-    cors                    : https://www.npmjs.com/package/cors
-    crypto-js               : https://www.npmjs.com/package/crypto-js
-    express                 : https://www.npmjs.com/package/express
-    httpolyglot             : https://www.npmjs.com/package/httpolyglot
-    mediasoup               : https://www.npmjs.com/package/mediasoup
-    mediasoup-client        : https://www.npmjs.com/package/mediasoup-client
-    ngrok                   : https://www.npmjs.com/package/ngrok
-    openai                  : https://www.npmjs.com/package/openai
-    qs                      : https://www.npmjs.com/package/qs
-    socket.io               : https://www.npmjs.com/package/socket.io
-    swagger-ui-express      : https://www.npmjs.com/package/swagger-ui-express
-    uuid                    : https://www.npmjs.com/package/uuid
-    xss                     : https://www.npmjs.com/package/xss
-    yamljs                  : https://www.npmjs.com/package/yamljs
-}
-*/
-
-/**
- * MiroTalk SFU - Server component
- *
- * @link    GitHub: https://github.com/miroslavpejic85/mirotalksfu
- * @link    Official Live demo: https://sfu.mirotalk.com
- * @license For open source use: AGPLv3
- * @license For commercial or closed source, contact us at license.mirotalk@gmail.com or purchase directly via CodeCanyon
- * @license CodeCanyon: https://codecanyon.net/item/mirotalk-sfu-webrtc-realtime-video-conferences/40769970
- * @author  Miroslav Pejic - miroslav.pejic.85@gmail.com
- * @version 1.3.64
- *
- */
-
+const React = require('react');
+const ReactDOMServer = require('react-dom/server');
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
@@ -259,18 +218,12 @@ function startServer() {
     });
 
     // set new room name and join
-    app.get(['/newroom'], (req, res) => {
-        if (hostCfg.protected) {
-            let ip = getIP(req);
-            if (allowedIP(ip)) {
-                res.sendFile(views.newRoom);
-            } else {
-                hostCfg.authenticated = false;
-                res.sendFile(views.login);
-            }
-        } else {
-            res.sendFile(views.newRoom);
-        }
+    app.get('/newroom', (req, res) => {
+        // Renderiza o componente React para uma string
+        const reactHtml = ReactDOMServer.renderToString(<h3>oi</h3>);
+
+        // Envia a string HTML renderizada como resposta
+        res.send(reactHtml);
     });
 
     // no room name specified to join || direct join
@@ -638,7 +591,7 @@ function startServer() {
             }
         });
 
-        socket.on('getPeerCounts', async ({}, callback) => {
+        socket.on('getPeerCounts', async ({ }, callback) => {
             if (!roomList.has(socket.room_id)) return;
 
             const room = roomList.get(socket.room_id);
@@ -1427,11 +1380,11 @@ function startServer() {
         function isValidHttpURL(input) {
             const pattern = new RegExp(
                 '^(https?:\\/\\/)?' + // protocol
-                    '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
-                    '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
-                    '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
-                    '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
-                    '(\\#[-a-z\\d_]*)?$',
+                '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
+                '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
+                '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
+                '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
+                '(\\#[-a-z\\d_]*)?$',
                 'i',
             ); // fragment locator
             return pattern.test(input);
