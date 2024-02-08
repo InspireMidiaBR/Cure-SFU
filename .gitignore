@@ -19,4 +19,5 @@ docker-compose.yml
 docker-push.sh
 yarn-error.log
 yarn.lock
-dist/*
+
+bundle.js.LICENSE.txt
