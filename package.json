@@ -15,6 +15,7 @@
         "start:prod": "node app/src/index.js",
         "start": "npm run transpile:client && npm run start:prod",
         "start:dev": "npm-run-all --parallel dev:client serve:dev",
+        "postinstall": "npm run transpile:client",
         "debug": "DEBUG='mediasoup*' node app/src/Server.js",
         "compile": "npx browserify public/sfu/MediasoupClientCompile.js -o public/sfu/MediasoupClient.js",
         "lint": "npx prettier --write .",
