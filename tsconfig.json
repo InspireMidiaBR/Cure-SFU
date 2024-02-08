@@ -1,0 +1,12 @@
+{
+    "compilerOptions": {
+        "outDir": "./dist/public/client",
+        "target": "es6",
+        "module": "commonjs",
+        "strict": true,
+        "jsx": "react",
+        "esModuleInterop": true
+    },
+    "include": ["client/**/*"],
+    "exclude": ["node_modules"]
+}

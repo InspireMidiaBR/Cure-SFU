@@ -3,6 +3,8 @@
 
 const React = require('react');
 const ReactDOMServer = require('react-dom/server');
+
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
@@ -36,7 +38,7 @@ const qS = require('qs');
 const slackEnabled = config.slack.enabled;
 const slackSigningSecret = config.slack.signingSecret;
 const bodyParser = require('body-parser');
-const { default: App } = require('../../client/App.jsx');
+const { default: App } = require('../../dist/public/client/App.js');
 
 const app = express();
 
@@ -224,7 +226,7 @@ function startServer() {
         const reactHtml = ReactDOMServer.renderToString(
             <div id='app'>
                 <App />
-                <script src="../../dist/public/bundle_client.js" />
+                <script src="../../dist/public/bundle.js" />
             </div>
         );
 
