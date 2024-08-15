@@ -1,4 +1,4 @@
-'use-strict';
+'use strict';
 
 class LocalStorage {
     constructor() {
@@ -18,9 +18,9 @@ class LocalStorage {
         this.SFU_SETTINGS = {
             share_on_join: true, // popup message on join
             show_chat_on_msg: true, // show chat on new message
-            transcript_persistent_mode: false, // Prevent stop transcript in case of no-speech
             transcript_show_on_msg: true, // show transcript on new message
             speech_in_msg: false, // speech incoming message
+            moderator_video_start_privacy: false, // Everyone starts video in privacy mode
             moderator_audio_start_muted: false, // Everyone starts muted in the room
             moderator_video_start_hidden: false, // Everyone starts hidden in the room
             moderator_audio_cant_unmute: false, // Everyone can't unmute themselves
@@ -28,6 +28,7 @@ class LocalStorage {
             moderator_screen_cant_share: false, // Everyone can't share screen
             moderator_chat_cant_privately: false, // Everyone can't chat privately, only Public chat allowed
             moderator_chat_cant_chatgpt: false, // Everyone can't chat with ChatGPT
+            moderator_disconnect_all_on_leave: false, // Disconnect all participants on leave room
             mic_auto_gain_control: false,
             mic_echo_cancellations: true,
             mic_noise_suppression: true,
@@ -37,16 +38,19 @@ class LocalStorage {
             mic_latency: 50, // ms
             mic_volume: 100, // %
             video_fps: 0, // default 1280x768 30fps
-            screen_fps: 3, // default 5fps
+            screen_fps: 4, // default 5fps
             broadcasting: false, // default false (one to many a/v streaming)
             lobby: false, // default false
             pitch_bar: true, // volume indicator
             sounds: true, // room notify sounds
-            host_ony_recording: false, // presenter
-            rec_prioritize_h264: false, // Prioritize h.264 with AAC or h.264 with Opus codecs over VP8 with Opus or VP9 with Opus codecs.
+            host_only_recording: false, // presenter
+            rec_prioritize_h264: false, // Prioritize h.264 with AAC or h.264 with Opus codecs over VP8 with Opus or VP9 with Opus codecs
+            rec_server: false, // The recording will be stored on the server rather than locally
             video_obj_fit: 2, // cover
             video_controls: 0, // off
             theme: 0, // dark
+            theme_color: '#000000', // custom theme color
+            theme_custom: false, // keep custom theme
             buttons_bar: 0, // vertical
             pin_grid: 0, // vertical
         };

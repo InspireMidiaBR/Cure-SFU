@@ -11,7 +11,7 @@ if (location.href.substr(0, 5) !== 'https') location.href = 'https' + location.h
  * @license For commercial or closed source, contact us at license.mirotalk@gmail.com or purchase directly via CodeCanyon
  * @license CodeCanyon: https://codecanyon.net/item/mirotalk-sfu-webrtc-realtime-video-conferences/40769970
  * @author  Miroslav Pejic - miroslav.pejic.85@gmail.com
- * @version 1.3.64
+ * @version 1.5.58
  *
  */
 
@@ -40,16 +40,16 @@ const _PEER = {
     presenter: '<i class="fa-solid fa-user-shield"></i>',
     guest: '<i class="fa-solid fa-signal"></i>',
     audioOn: '<i class="fas fa-microphone"></i>',
-    audioOff: '<i style="color: red;" class="fas fa-microphone-slash"></i>',
+    audioOff: '<i class="fas fa-microphone-slash red"></i>',
     videoOn: '<i class="fas fa-video"></i>',
-    videoOff: '<i style="color: red;" class="fas fa-video-slash"></i>',
+    videoOff: '<i class="fas fa-video-slash red"></i>',
     screenOn: '<i class="fas fa-desktop"></i>',
-    screenOff: '<i style="color: red;" class="fas fa-desktop"></i>',
+    screenOff: '<i class="fas fa-desktop red"></i>',
     raiseHand: '<i style="color: rgb(0, 255, 71);" class="fas fa-hand-paper pulsate"></i>',
     lowerHand: '',
     acceptPeer: '<i class="fas fa-check"></i>',
-    banPeer: '<i class="fas fa-ban"></i>',
-    ejectPeer: '<i class="fas fa-times"></i>',
+    banPeer: '<i class="fas fa-ban red"></i>',
+    ejectPeer: '<i class="fas fa-right-from-bracket red"></i>',
     geoLocation: '<i class="fas fa-location-dot"></i>',
     sendFile: '<i class="fas fa-upload"></i>',
     sendMsg: '<i class="fas fa-paper-plane"></i>',
@@ -63,13 +63,19 @@ const bars = document.querySelectorAll('.volume-bar');
 const userAgent = navigator.userAgent.toLowerCase();
 const isTabletDevice = isTablet(userAgent);
 const isIPadDevice = isIpad(userAgent);
+const thisInfo = getInfo();
 
 const Base64Prefix = 'data:application/pdf;base64,';
 
+// Whiteboard
 const wbImageInput = 'image/*';
 const wbPdfInput = 'application/pdf';
-const wbWidth = 1200;
-const wbHeight = 600;
+const wbWidth = 1366;
+const wbHeight = 768;
+const wbGridSize = 20;
+const wbStroke = '#cccccc63';
+let wbGridLines = [];
+let wbGridVisible = false;
 
 const swalImageUrl = '../images/pricing-illustration.svg';
 
@@ -95,6 +101,82 @@ console.log('LOCAL_STORAGE', {
 });
 
 // ####################################################
+// THEME CUSTOM COLOR - PICKER
+// ####################################################
+
+const themeCustom = {
+    input: document.getElementById('themeColorPicker'),
+    color: localStorageSettings.theme_color ? localStorageSettings.theme_color : '#000000',
+    keep: localStorageSettings.theme_custom ? localStorageSettings.theme_custom : false,
+};
+
+const pickr = Pickr.create({
+    el: themeCustom.input,
+    theme: 'classic', // or 'monolith', or 'nano'
+    default: themeCustom.color,
+    useAsButton: true,
+
+    swatches: [
+        'rgba(244, 67, 54, 1)',
+        'rgba(233, 30, 99, 0.95)',
+        'rgba(156, 39, 176, 0.9)',
+        'rgba(103, 58, 183, 0.85)',
+        'rgba(63, 81, 181, 0.8)',
+        'rgba(33, 150, 243, 0.75)',
+        'rgba(3, 169, 244, 0.7)',
+        'rgba(0, 188, 212, 0.7)',
+        'rgba(0, 150, 136, 0.75)',
+        'rgba(76, 175, 80, 0.8)',
+        'rgba(139, 195, 74, 0.85)',
+        'rgba(205, 220, 57, 0.9)',
+        'rgba(255, 235, 59, 0.95)',
+        'rgba(255, 193, 7, 1)',
+    ],
+
+    components: {
+        // Main components
+        preview: true,
+        opacity: true,
+        hue: true,
+
+        // Input / output Options
+        interaction: {
+            hex: false,
+            rgba: false,
+            hsla: false,
+            hsva: false,
+            cmyk: false,
+            input: false,
+            clear: false,
+            save: false,
+        },
+    },
+})
+    .on('init', (pickr) => {
+        themeCustom.input.value = pickr.getSelectedColor().toHEXA().toString(0);
+    })
+    .on('change', (color) => {
+        themeCustom.color = color.toHEXA().toString();
+        themeCustom.input.value = themeCustom.color;
+        setCustomTheme();
+    })
+    .on('changestop', (color) => {
+        localStorageSettings.theme_color = themeCustom.color;
+        lS.setSettings(localStorageSettings);
+    });
+
+// ####################################################
+// ENUMERATE DEVICES SELECTS
+// ####################################################
+
+const videoSelect = getId('videoSelect');
+const initVideoSelect = getId('initVideoSelect');
+const microphoneSelect = getId('microphoneSelect');
+const initMicrophoneSelect = getId('initMicrophoneSelect');
+const speakerSelect = getId('speakerSelect');
+const initSpeakerSelect = getId('initSpeakerSelect');
+
+// ####################################################
 // DYNAMIC SETTINGS
 // ####################################################
 
@@ -110,8 +192,7 @@ let room_id = getRoomId();
 let room_password = getRoomPassword();
 let peer_name = getPeerName();
 let peer_uuid = getPeerUUID();
-let peer_username = getPeerUsername();
-let peer_password = getPeerPassword();
+let peer_token = getPeerToken();
 let isScreenAllowed = getScreen();
 let isHideMeActive = getHideMeActive();
 let notify = getNotify();
@@ -165,13 +246,21 @@ let initStream = null;
 
 let scriptProcessor = null;
 
-const RoomURL = window.location.origin + '/join/' + room_id;
+const RoomURL = window.location.origin + '/join/' + room_id; // window.location.origin + '/join/?room=' + roomId + '&token=' + myToken
 
 let transcription;
+
+let showFreeAvatars = true;
+
+let quill = null;
 
 // ####################################################
 // INIT ROOM
 // ####################################################
+
+document.addEventListener('DOMContentLoaded', function () {
+    initClient();
+});
 
 function initClient() {
     setTheme();
@@ -201,6 +290,7 @@ function initClient() {
             'Lobby mode lets you protect your meeting by only allowing people to enter after a formal approval by a moderator',
             'right',
         );
+        setTippy('initVideoAudioRefreshButton', 'Refresh audio/video devices', 'top');
         setTippy('switchPitchBar', 'Toggle audio pitch bar', 'right');
         setTippy('switchSounds', 'Toggle the sounds notifications', 'right');
         setTippy('switchShare', "Show 'Share Room' popup on join", 'right');
@@ -217,25 +307,18 @@ function initClient() {
             'Prioritize h.264 with AAC or h.264 with Opus codecs over VP8 with Opus or VP9 with Opus codecs',
             'right',
         );
+        setTippy('refreshVideoFiles', 'Refresh', 'left');
+        setTippy('switchServerRecording', 'The recording will be stored on the server rather than locally', 'right');
         setTippy('whiteboardGhostButton', 'Toggle transparent background', 'bottom');
+        setTippy('whiteboardGridBtn', 'Toggle whiteboard grid', 'bottom');
         setTippy('wbBackgroundColorEl', 'Background color', 'bottom');
         setTippy('wbDrawingColorEl', 'Drawing color', 'bottom');
         setTippy('whiteboardPencilBtn', 'Drawing mode', 'bottom');
         setTippy('whiteboardObjectBtn', 'Object mode', 'bottom');
         setTippy('whiteboardUndoBtn', 'Undo', 'bottom');
         setTippy('whiteboardRedoBtn', 'Redo', 'bottom');
-        setTippy('whiteboardImgFileBtn', 'Add image file', 'bottom');
-        setTippy('whiteboardPdfFileBtn', 'Add pdf file', 'bottom');
-        setTippy('whiteboardImgUrlBtn', 'Add image url', 'bottom');
-        setTippy('whiteboardTextBtn', 'Add text', 'bottom');
-        setTippy('whiteboardLineBtn', 'Add line', 'bottom');
-        setTippy('whiteboardRectBtn', 'Add rectangle', 'bottom');
-        setTippy('whiteboardTriangleBtn', 'Add triangle', 'bottom');
-        setTippy('whiteboardCircleBtn', 'Add circle', 'bottom');
-        setTippy('whiteboardSaveBtn', 'Save', 'bottom');
-        setTippy('whiteboardEraserBtn', 'Eraser', 'bottom');
-        setTippy('whiteboardCleanBtn', 'Clean', 'bottom');
-        setTippy('whiteboardLockButton', 'If enabled, participants cannot interact', 'right');
+        setTippy('whiteboardLockBtn', 'Toggle Lock whiteboard', 'right');
+        setTippy('whiteboardUnlockBtn', 'Toggle Lock whiteboard', 'right');
         setTippy('whiteboardCloseBtn', 'Close', 'right');
         setTippy('chatCleanTextButton', 'Clean', 'top');
         setTippy('chatPasteButton', 'Paste', 'top');
@@ -252,6 +335,22 @@ function initClient() {
         setTippy('chatShowParticipantsList', 'Toggle participants list', 'bottom');
         setTippy('chatMaxButton', 'Maximize', 'bottom');
         setTippy('chatMinButton', 'Minimize', 'bottom');
+        setTippy('pollTogglePin', 'Toggle pin', 'bottom');
+        setTippy('pollMaxButton', 'Maximize', 'bottom');
+        setTippy('pollMinButton', 'Minimize', 'bottom');
+        setTippy('pollSaveButton', 'Save results', 'bottom');
+        setTippy('pollCloseBtn', 'Close', 'bottom');
+        setTippy('editorLockBtn', 'Toggle Lock editor', 'bottom');
+        setTippy('editorUnlockBtn', 'Toggle Lock editor', 'bottom');
+        setTippy('editorTogglePin', 'Toggle pin', 'bottom');
+        setTippy('editorUndoBtn', 'Undo', 'bottom');
+        setTippy('editorRedoBtn', 'Redo', 'bottom');
+        setTippy('editorCopyBtn', 'Copy', 'bottom');
+        setTippy('editorSaveBtn', 'Save', 'bottom');
+        setTippy('editorCloseBtn', 'Close', 'bottom');
+        setTippy('editorCleanBtn', 'Clean', 'bottom');
+        setTippy('pollAddOptionBtn', 'Add option', 'top');
+        setTippy('pollDelOptionBtn', 'Delete option', 'top');
         setTippy('participantsSaveBtn', 'Save participants info', 'bottom');
         setTippy('participantsRaiseHandBtn', 'Toggle raise hands', 'bottom');
         setTippy('participantsUnreadMessagesBtn', 'Toggle unread messages', 'bottom');
@@ -261,12 +360,12 @@ function initClient() {
         setTippy('transcriptionMinBtn', 'Minimize', 'bottom');
         setTippy('transcriptionSpeechStatus', 'Status', 'bottom');
         setTippy('transcriptShowOnMsg', 'Show transcript on new message comes', 'bottom');
-        setTippy('transcriptPersistentMode', 'Prevent stopping in the absence of speech', 'bottom');
         setTippy('transcriptionSpeechStart', 'Start transcription', 'top');
         setTippy('transcriptionSpeechStop', 'Stop transcription', 'top');
     }
     setupWhiteboard();
     initEnumerateDevices();
+    setupInitButtons();
 }
 
 // ####################################################
@@ -275,27 +374,37 @@ function initClient() {
 
 function refreshMainButtonsToolTipPlacement() {
     if (!DetectRTC.isMobileDevice) {
-        const placement = BtnsBarPosition.options[BtnsBarPosition.selectedIndex].value == 'vertical' ? 'right' : 'top';
+        //
+        const position = BtnsBarPosition.options[BtnsBarPosition.selectedIndex].value;
+        const placement = position == 'vertical' ? 'right' : 'top';
+        const bPlacement = position == 'vertical' ? 'top' : 'right';
+
+        // Control buttons
         setTippy('shareButton', 'Share room', placement);
-        setTippy('hideMeButton', 'Toggle hide self view', placement);
-        setTippy('startAudioButton', 'Start the audio', placement);
-        setTippy('stopAudioButton', 'Stop the audio', placement);
-        setTippy('startVideoButton', 'Start the video', placement);
-        setTippy('stopVideoButton', 'Stop the video', placement);
-        setTippy('startScreenButton', 'Start screen share', placement);
-        setTippy('stopScreenButton', 'Stop screen share', placement);
         setTippy('startRecButton', 'Start recording', placement);
         setTippy('stopRecButton', 'Stop recording', placement);
-        setTippy('raiseHandButton', 'Raise your hand', placement);
-        setTippy('lowerHandButton', 'Lower your hand', placement);
         setTippy('emojiRoomButton', 'Toggle emoji reaction', placement);
-        setTippy('swapCameraButton', 'Swap the camera', placement);
         setTippy('chatButton', 'Toggle the chat', placement);
+        setTippy('pollButton', 'Toggle the poll', placement);
+        setTippy('editorButton', 'Toggle the editor', placement);
         setTippy('transcriptionButton', 'Toggle transcription', placement);
         setTippy('whiteboardButton', 'Toggle the whiteboard', placement);
+        setTippy('snapshotRoomButton', 'Snapshot screen, window, or tab', placement);
         setTippy('settingsButton', 'Toggle the settings', placement);
         setTippy('aboutButton', 'About this project', placement);
-        setTippy('exitButton', 'Leave room', placement);
+
+        // Bottom buttons
+        setTippy('startAudioButton', 'Start the audio', bPlacement);
+        setTippy('stopAudioButton', 'Stop the audio', bPlacement);
+        setTippy('startVideoButton', 'Start the video', bPlacement);
+        setTippy('stopVideoButton', 'Stop the video', bPlacement);
+        setTippy('swapCameraButton', 'Swap the camera', bPlacement);
+        setTippy('hideMeButton', 'Toggle hide self view', bPlacement);
+        setTippy('startScreenButton', 'Start screen share', bPlacement);
+        setTippy('stopScreenButton', 'Stop screen share', bPlacement);
+        setTippy('raiseHandButton', 'Raise your hand', bPlacement);
+        setTippy('lowerHandButton', 'Lower your hand', bPlacement);
+        setTippy('exitButton', 'Leave room', bPlacement);
     }
 }
 
@@ -309,11 +418,15 @@ function setTippy(elem, content, placement, allowHTML = false) {
         if (element._tippy) {
             element._tippy.destroy();
         }
-        tippy(element, {
-            content: content,
-            placement: placement,
-            allowHTML: allowHTML,
-        });
+        try {
+            tippy(element, {
+                content: content,
+                placement: placement,
+                allowHTML: allowHTML,
+            });
+        } catch (err) {
+            console.error('setTippy error', err.message);
+        }
     } else {
         console.warn('setTippy element not found with content', content);
     }
@@ -350,16 +463,13 @@ function makeId(length) {
 // ####################################################
 
 async function initRoom() {
-    if (navigator.getDisplayMedia || navigator.mediaDevices.getDisplayMedia) {
-        BUTTONS.main.startScreenButton && show(initStartScreenButton);
-    }
     if (!isAudioAllowed && !isVideoAllowed && !joinRoomWithoutAudioVideo) {
         openURL(`/permission?room_id=${room_id}&message=Not allowed both Audio and Video`);
     } else {
         setButtonsInit();
         handleSelectsInit();
-        await setSelectsInit();
         await whoAreYou();
+        await setSelectsInit();
     }
 }
 
@@ -374,8 +484,34 @@ async function initEnumerateDevices() {
     await initRoom();
 }
 
+async function refreshMyAudioVideoDevices() {
+    await refreshMyVideoDevices();
+    await refreshMyAudioDevices();
+}
+
+async function refreshMyVideoDevices() {
+    if (!isVideoAllowed) return;
+    const initVideoSelectIndex = initVideoSelect ? initVideoSelect.selectedIndex : 0;
+    const videoSelectIndex = videoSelect ? videoSelect.selectedIndex : 0;
+    await initEnumerateVideoDevices();
+    if (initVideoSelect) initVideoSelect.selectedIndex = initVideoSelectIndex;
+    if (videoSelect) videoSelect.selectedIndex = videoSelectIndex;
+}
+
+async function refreshMyAudioDevices() {
+    if (!isAudioAllowed) return;
+    const initMicrophoneSelectIndex = initMicrophoneSelect ? initMicrophoneSelect.selectedIndex : 0;
+    const initSpeakerSelectIndex = initSpeakerSelect ? initSpeakerSelect.selectedIndex : 0;
+    const microphoneSelectIndex = microphoneSelect ? microphoneSelect.selectedIndex : 0;
+    const speakerSelectIndex = speakerSelect ? speakerSelect.selectedIndex : 0;
+    await initEnumerateAudioDevices();
+    if (initMicrophoneSelect) initMicrophoneSelect.selectedIndex = initMicrophoneSelectIndex;
+    if (initSpeakerSelect) initSpeakerSelect.selectedIndex = initSpeakerSelectIndex;
+    if (microphoneSelect) microphoneSelect.selectedIndex = microphoneSelectIndex;
+    if (speakerSelect) speakerSelect.selectedIndex = speakerSelectIndex;
+}
+
 async function initEnumerateVideoDevices() {
-    if (isEnumerateVideoDevices) return;
     // allow the video
     await navigator.mediaDevices
         .getUserMedia({ video: true })
@@ -390,6 +526,10 @@ async function initEnumerateVideoDevices() {
 
 async function enumerateVideoDevices(stream) {
     console.log('02 ----> Get Video Devices');
+
+    if (videoSelect) videoSelect.innerHTML = '';
+    if (initVideoSelect) initVideoSelect.innerHTML = '';
+
     await navigator.mediaDevices
         .enumerateDevices()
         .then((devices) =>
@@ -397,8 +537,8 @@ async function enumerateVideoDevices(stream) {
                 let el,
                     eli = null;
                 if ('videoinput' === device.kind) {
-                    el = videoSelect;
-                    eli = initVideoSelect;
+                    if (videoSelect) el = videoSelect;
+                    if (initVideoSelect) eli = initVideoSelect;
                     lS.DEVICES_COUNT.video++;
                 }
                 if (!el) return;
@@ -412,7 +552,6 @@ async function enumerateVideoDevices(stream) {
 }
 
 async function initEnumerateAudioDevices() {
-    if (isEnumerateAudioDevices) return;
     // allow the audio
     await navigator.mediaDevices
         .getUserMedia({ audio: true })
@@ -428,6 +567,13 @@ async function initEnumerateAudioDevices() {
 
 async function enumerateAudioDevices(stream) {
     console.log('03 ----> Get Audio Devices');
+
+    if (microphoneSelect) microphoneSelect.innerHTML = '';
+    if (initMicrophoneSelect) initMicrophoneSelect.innerHTML = '';
+
+    if (speakerSelect) speakerSelect.innerHTML = '';
+    if (initSpeakerSelect) initSpeakerSelect.innerHTML = '';
+
     await navigator.mediaDevices
         .enumerateDevices()
         .then((devices) =>
@@ -435,12 +581,12 @@ async function enumerateAudioDevices(stream) {
                 let el,
                     eli = null;
                 if ('audioinput' === device.kind) {
-                    el = microphoneSelect;
-                    eli = initMicrophoneSelect;
+                    if (microphoneSelect) el = microphoneSelect;
+                    if (initMicrophoneSelect) eli = initMicrophoneSelect;
                     lS.DEVICES_COUNT.audio++;
                 } else if ('audiooutput' === device.kind) {
-                    el = speakerSelect;
-                    eli = initSpeakerSelect;
+                    if (speakerSelect) el = speakerSelect;
+                    if (initSpeakerSelect) eli = initSpeakerSelect;
                     lS.DEVICES_COUNT.speaker++;
                 }
                 if (!el) return;
@@ -485,6 +631,31 @@ async function addChild(device, els) {
         }
         el.appendChild(option);
     });
+}
+
+// ####################################################
+// INIT AUDIO/VIDEO/SCREEN BUTTONS
+// ####################################################
+
+function setupInitButtons() {
+    initVideoAudioRefreshButton.onclick = () => {
+        refreshMyAudioVideoDevices();
+    };
+    initVideoButton.onclick = () => {
+        handleVideo();
+    };
+    initAudioButton.onclick = () => {
+        handleAudio();
+    };
+    initAudioVideoButton.onclick = async (e) => {
+        await handleAudioVideo(e);
+    };
+    initStartScreenButton.onclick = async () => {
+        await toggleScreenSharing();
+    };
+    initStopScreenButton.onclick = async () => {
+        await toggleScreenSharing();
+    };
 }
 
 // ####################################################
@@ -625,28 +796,16 @@ function getPeerUUID() {
     return peer_uuid;
 }
 
-function getPeerUsername() {
-    if (window.sessionStorage.peer_username) return window.sessionStorage.peer_username;
+function getPeerToken() {
+    if (window.sessionStorage.peer_token) return window.sessionStorage.peer_token;
     let qs = new URLSearchParams(window.location.search);
-    let username = filterXSS(qs.get('username'));
-    let queryUsername = false;
-    if (username) {
-        queryUsername = username;
+    let token = filterXSS(qs.get('token'));
+    let queryToken = false;
+    if (token) {
+        queryToken = token;
     }
-    console.log('Direct join', { username: queryUsername });
-    return queryUsername;
-}
-
-function getPeerPassword() {
-    if (window.sessionStorage.peer_password) return window.sessionStorage.peer_password;
-    let qs = new URLSearchParams(window.location.search);
-    let password = filterXSS(qs.get('password'));
-    let queryPassword = false;
-    if (password) {
-        queryPassword = password;
-    }
-    console.log('Direct join', { password: queryPassword });
-    return queryPassword;
+    console.log('Direct join', { token: queryToken });
+    return queryToken;
 }
 
 function getRoomPassword() {
@@ -690,8 +849,7 @@ function getPeerInfo() {
         peer_uuid: peer_uuid,
         peer_id: socket.id,
         peer_name: peer_name,
-        peer_username: peer_username,
-        peer_password: peer_password,
+        peer_token: peer_token,
         peer_presenter: isPresenter,
         peer_audio: isAudioAllowed,
         peer_video: isVideoAllowed,
@@ -711,6 +869,44 @@ function getPeerInfo() {
     };
 }
 
+function getInfo() {
+    const parser = new UAParser(userAgent);
+
+    try {
+        const parserResult = parser.getResult();
+        console.log('Info', parserResult);
+
+        // Filter out properties with 'Unknown' values
+        const filterUnknown = (obj) => {
+            const filtered = {};
+            for (const [key, value] of Object.entries(obj)) {
+                if (value && value !== 'Unknown') {
+                    filtered[key] = value;
+                }
+            }
+            return filtered;
+        };
+
+        const filteredResult = {
+            //ua: parserResult.ua,
+            browser: filterUnknown(parserResult.browser),
+            cpu: filterUnknown(parserResult.cpu),
+            device: filterUnknown(parserResult.device),
+            engine: filterUnknown(parserResult.engine),
+            os: filterUnknown(parserResult.os),
+        };
+
+        // Convert the filtered result to a readable JSON string
+        const resultString = JSON.stringify(filteredResult, null, 2);
+
+        extraInfo.innerText = resultString;
+
+        return parserResult;
+    } catch (error) {
+        console.error('Error parsing user agent:', error);
+    }
+}
+
 // ####################################################
 // ENTER YOUR NAME | Enable/Disable AUDIO/VIDEO
 // ####################################################
@@ -720,6 +916,26 @@ async function whoAreYou() {
 
     hide(loadingDiv);
     document.body.style.background = 'var(--body-bg)';
+
+    try {
+        const response = await axios.get('/config', {
+            timeout: 5000,
+        });
+        const serverButtons = response.data.message;
+        if (serverButtons) {
+            BUTTONS = serverButtons;
+            console.log('04 ----> AXIOS ROOM BUTTONS SETTINGS', {
+                serverButtons: serverButtons,
+                clientButtons: BUTTONS,
+            });
+        }
+    } catch (error) {
+        console.error('04 ----> AXIOS GET CONFIG ERROR', error.message);
+    }
+
+    if (navigator.getDisplayMedia || navigator.mediaDevices.getDisplayMedia) {
+        BUTTONS.main.startScreenButton && show(initStartScreenButton);
+    }
 
     if (peer_name) {
         checkMedia();
@@ -738,6 +954,7 @@ async function whoAreYou() {
         elemDisplay('initVideo', false);
         elemDisplay('initVideoButton', false);
         elemDisplay('initAudioVideoButton', false);
+        elemDisplay('initVideoAudioRefreshButton', false);
         elemDisplay('initVideoSelect', false);
         elemDisplay('tabVideoDevicesBtn', false);
         initVideoContainerShow(false);
@@ -746,6 +963,7 @@ async function whoAreYou() {
         isAudioAllowed = false;
         elemDisplay('initAudioButton', false);
         elemDisplay('initAudioVideoButton', false);
+        elemDisplay('initVideoAudioRefreshButton', false);
         elemDisplay('initMicrophoneSelect', false);
         elemDisplay('initSpeakerSelect', false);
         elemDisplay('tabAudioDevicesBtn', false);
@@ -760,9 +978,9 @@ async function whoAreYou() {
         allowOutsideClick: false,
         allowEscapeKey: false,
         background: swalBackground,
-        title: 'MiroTalk SFU',
+        title: BRAND.app.name,
         input: 'text',
-        inputPlaceholder: 'Enter your name',
+        inputPlaceholder: 'Enter your email or name',
         inputAttributes: { maxlength: 32 },
         inputValue: default_name,
         html: initUser, // Inject HTML
@@ -771,7 +989,7 @@ async function whoAreYou() {
         showClass: { popup: 'animate__animated animate__fadeInDown' },
         hideClass: { popup: 'animate__animated animate__fadeOutUp' },
         inputValidator: (name) => {
-            if (!name) return 'Please enter your name';
+            if (!name) return 'Please enter your email or name';
             if (name.length > 30) return 'Name must be max 30 char';
             name = filterXSS(name);
             if (isHtml(name)) return 'Invalid name!';
@@ -833,7 +1051,9 @@ async function handleAudioVideo() {
     if (!isAudioVideoAllowed) {
         hide(initAudioButton);
         hide(initVideoButton);
+        hide(initVideoAudioRefreshButton);
     }
+    if (isAudioAllowed && isVideoAllowed && !DetectRTC.isMobileDevice) show(initVideoAudioRefreshButton);
     setColor(initAudioVideoButton, isAudioVideoAllowed ? 'white' : 'red');
     setColor(initAudioButton, isAudioAllowed ? 'white' : 'red');
     setColor(initVideoButton, isVideoAllowed ? 'white' : 'red');
@@ -952,6 +1172,10 @@ async function shareRoom(useNavigator = false) {
 // ROOM UTILITY
 // ####################################################
 
+function isDesktopDevice() {
+    return !DetectRTC.isMobileDevice && !isTabletDevice && !isIPadDevice;
+}
+
 function makeRoomQR() {
     let qr = new QRious({
         element: document.getElementById('qrRoom'),
@@ -971,6 +1195,19 @@ function copyRoomURL() {
     navigator.clipboard.writeText(tmpInput.value);
     document.body.removeChild(tmpInput);
     userLog('info', 'Meeting URL copied to clipboard 👍', 'top-end');
+}
+
+function copyToClipboard(txt, showTxt = true) {
+    let tmpInput = document.createElement('input');
+    document.body.appendChild(tmpInput);
+    tmpInput.value = txt;
+    tmpInput.select();
+    tmpInput.setSelectionRange(0, 99999); // For mobile devices
+    navigator.clipboard.writeText(tmpInput.value);
+    document.body.removeChild(tmpInput);
+    showTxt
+        ? userLog('info', `${txt} copied to clipboard 👍`, 'top-end')
+        : userLog('info', `Copied to clipboard 👍`, 'top-end');
 }
 
 function shareRoomByEmail() {
@@ -995,7 +1232,7 @@ function shareRoomByEmail() {
                     ? 'Password: ' + (room_password || rc.RoomPassword) + newLine
                     : '';
             const email = '';
-            const emailSubject = `Please join our MiroTalk SFU Video Chat Meeting`;
+            const emailSubject = `Please join our ${BRAND.app.name} Video Chat Meeting`;
             const emailBody = `The meeting is scheduled at: ${newLine} DateTime: ${selectedDateTime} ${newLine}${roomPassword}Click to join: ${RoomURL} ${newLine}`;
             document.location = 'mailto:' + email + '?subject=' + emailSubject + '&body=' + emailBody;
         },
@@ -1060,11 +1297,15 @@ function roomIsReady() {
         hide(tabRecordingBtn);
     }
     BUTTONS.main.chatButton && show(chatButton);
+    BUTTONS.main.pollButton && show(pollButton);
+    BUTTONS.main.editorButton && show(editorButton);
     BUTTONS.main.raiseHandButton && show(raiseHandButton);
     BUTTONS.main.emojiRoomButton && show(emojiRoomButton);
     !BUTTONS.chat.chatSaveButton && hide(chatSaveButton);
     BUTTONS.chat.chatEmojiButton && show(chatEmojiButton);
     BUTTONS.chat.chatMarkdownButton && show(chatMarkdownButton);
+
+    !BUTTONS.poll.pollSaveButton && hide(pollSaveButton);
 
     isWebkitSpeechRecognitionSupported && BUTTONS.chat.chatSpeechStartButton
         ? show(chatSpeechStartButton)
@@ -1077,12 +1318,23 @@ function roomIsReady() {
     show(chatCleanTextButton);
     show(chatPasteButton);
     show(chatSendButton);
+    if (isDesktopDevice()) {
+        show(whiteboardGridBtn);
+    }
     if (DetectRTC.isMobileDevice) {
+        hide(initVideoAudioRefreshButton);
+        hide(refreshVideoDevices);
+        hide(refreshAudioDevices);
         BUTTONS.main.swapCameraButton && show(swapCameraButton);
         rc.chatMaximize();
         hide(chatTogglePin);
         hide(chatMaxButton);
         hide(chatMinButton);
+        rc.pollMaximize();
+        hide(pollTogglePin);
+        hide(editorTogglePin);
+        hide(pollMaxButton);
+        hide(pollMinButton);
         transcription.maximize();
         hide(transcriptionTogglePinBtn);
         hide(transcriptionMaxBtn);
@@ -1090,6 +1342,8 @@ function roomIsReady() {
     } else {
         rc.makeDraggable(emojiPickerContainer, emojiPickerHeader);
         rc.makeDraggable(chatRoom, chatHeader);
+        rc.makeDraggable(pollRoom, pollHeader);
+        //rc.makeDraggable(editorRoom, editorHeader);
         rc.makeDraggable(mySettings, mySettingsHeader);
         rc.makeDraggable(whiteboard, whiteboardHeader);
         rc.makeDraggable(sendFileDiv, imgShareSend);
@@ -1101,10 +1355,19 @@ function roomIsReady() {
                 show(startScreenButton);
                 show(ScreenFpsDiv);
             }
+            BUTTONS.main.snapshotRoomButton && show(snapshotRoomButton);
         }
         BUTTONS.chat.chatPinButton && show(chatTogglePin);
         BUTTONS.chat.chatMaxButton && show(chatMaxButton);
+        BUTTONS.poll.pollPinButton && show(pollTogglePin);
+        show(editorTogglePin);
+        BUTTONS.poll.pollMaxButton && show(pollMaxButton);
         BUTTONS.settings.pushToTalk && show(pushToTalkDiv);
+        BUTTONS.settings.tabRTMPStreamingBtn &&
+            show(tabRTMPStreamingBtn) &&
+            show(startRtmpButton) &&
+            show(startRtmpURLButton) &&
+            show(streamerRtmpButton);
     }
     if (DetectRTC.browser.name != 'Safari') {
         document.onfullscreenchange = () => {
@@ -1116,15 +1379,12 @@ function roomIsReady() {
     BUTTONS.main.settingsButton && show(settingsButton);
     isAudioAllowed ? show(stopAudioButton) : BUTTONS.main.startAudioButton && show(startAudioButton);
     isVideoAllowed ? show(stopVideoButton) : BUTTONS.main.startVideoButton && show(startVideoButton);
-    show(fileShareButton);
+    BUTTONS.settings.fileSharing && show(fileShareButton);
     BUTTONS.settings.lockRoomButton && show(lockRoomButton);
     BUTTONS.settings.broadcastingButton && show(broadcastingButton);
     BUTTONS.settings.lobbyButton && show(lobbyButton);
-    if (BUTTONS.settings.host_only_recording) {
-        show(roomRecording);
-        show(recordingImage);
-        show(roomRecordingOptions);
-    }
+    BUTTONS.settings.sendEmailInvitation && show(sendEmailInvitation);
+    if (rc.recording.recSyncServerRecording) show(roomRecordingServer);
     BUTTONS.main.aboutButton && show(aboutButton);
     if (!DetectRTC.isMobileDevice) show(pinUnpinGridDiv);
     if (!isSpeechSynthesisSupported) hide(speechMsgDiv);
@@ -1133,6 +1393,7 @@ function roomIsReady() {
     handleInputs();
     handleChatEmojiPicker();
     handleRoomEmojiPicker();
+    handleEditor();
     loadSettingsFromLocalStorage();
     startSessionTimer();
     document.body.addEventListener('mousemove', (e) => {
@@ -1224,10 +1485,29 @@ function stopRecordingTimer() {
 // ####################################################
 
 function handleButtons() {
+    // Lobby...
+    document.getElementById('lobbyUsers').addEventListener('click', function (event) {
+        switch (event.target.id) {
+            case 'lobbyAcceptAllBtn':
+                rc.lobbyAcceptAll();
+                break;
+            case 'lobbyRejectAllBtn':
+                rc.lobbyRejectAll();
+                break;
+            default:
+                break;
+        }
+    });
     control.onmouseover = () => {
         isButtonsBarOver = true;
     };
     control.onmouseout = () => {
+        isButtonsBarOver = false;
+    };
+    bottomButtons.onmouseover = () => {
+        isButtonsBarOver = true;
+    };
+    bottomButtons.onmouseout = () => {
         isButtonsBarOver = false;
     };
     exitButton.onclick = () => {
@@ -1237,6 +1517,9 @@ function handleButtons() {
         shareRoom(true);
     };
     hideMeButton.onclick = (e) => {
+        if (isHideALLVideosActive) {
+            return userLog('warning', 'To use this feature, please toggle video focus mode', 'top-end', 6000);
+        }
         isHideMeActive = !isHideMeActive;
         rc.handleHideMe();
     };
@@ -1261,6 +1544,14 @@ function handleButtons() {
     tabVideoShareBtn.onclick = (e) => {
         rc.openTab(e, 'tabVideoShare');
     };
+    tabRTMPStreamingBtn.onclick = (e) => {
+        rc.getRTMP();
+        rc.openTab(e, 'tabRTMPStreaming');
+    };
+    refreshVideoFiles.onclick = () => {
+        rc.getRTMP();
+        userLog('info', 'Refreshed video files', 'top-end');
+    };
     tabAspectBtn.onclick = (e) => {
         rc.openTab(e, 'tabAspect');
     };
@@ -1275,6 +1566,31 @@ function handleButtons() {
     };
     tabLanguagesBtn.onclick = (e) => {
         rc.openTab(e, 'tabLanguages');
+    };
+    tabVideoAIBtn.onclick = (e) => {
+        rc.openTab(e, 'tabVideoAI');
+        rc.getAvatarList();
+        rc.getVoiceList();
+    };
+    avatarVideoAIStart.onclick = (e) => {
+        rc.stopSession();
+        rc.handleVideoAI();
+        rc.toggleMySettings();
+    };
+    switchAvatars.onchange = (e) => {
+        showFreeAvatars = e.currentTarget.checked;
+        rc.getAvatarList();
+    };
+    avatarQuality.onchange = (e) => {
+        VideoAI.quality = e.target.value;
+    };
+    refreshVideoDevices.onclick = async () => {
+        await refreshMyVideoDevices();
+        userLog('info', 'Refreshed video devices', 'top-end');
+    };
+    refreshAudioDevices.onclick = async () => {
+        await refreshMyAudioDevices();
+        userLog('info', 'Refreshed audio devices', 'top-end');
     };
     applyAudioOptionsButton.onclick = () => {
         rc.closeThenProduce(RoomClient.mediaType.audio, microphoneSelect.value);
@@ -1293,6 +1609,70 @@ function handleButtons() {
         if (DetectRTC.isMobileDevice) {
             rc.toggleShowParticipants();
         }
+    };
+    // Polls
+    pollButton.onclick = () => {
+        rc.togglePoll();
+    };
+    pollMaxButton.onclick = () => {
+        rc.pollMaximize();
+    };
+    pollMinButton.onclick = () => {
+        rc.pollMinimize();
+    };
+    pollCloseBtn.onclick = () => {
+        rc.togglePoll();
+    };
+    pollTogglePin.onclick = () => {
+        rc.togglePollPin();
+    };
+    pollSaveButton.onclick = () => {
+        rc.pollSaveResults();
+    };
+    pollAddOptionBtn.onclick = () => {
+        rc.pollAddOptions();
+    };
+    pollDelOptionBtn.onclick = () => {
+        rc.pollDeleteOptions();
+    };
+    pollCreateForm.onsubmit = (e) => {
+        rc.pollCreateNewForm(e);
+    };
+    editorButton.onclick = () => {
+        rc.toggleEditor();
+        if (isPresenter && !rc.editorIsLocked()) {
+            rc.editorSendAction('open');
+        }
+    };
+    editorCloseBtn.onclick = () => {
+        rc.toggleEditor();
+        if (isPresenter && !rc.editorIsLocked()) {
+            rc.editorSendAction('close');
+        }
+    };
+    editorTogglePin.onclick = () => {
+        rc.toggleEditorPin();
+    };
+    editorLockBtn.onclick = () => {
+        rc.toggleLockUnlockEditor();
+    };
+    editorUnlockBtn.onclick = () => {
+        rc.toggleLockUnlockEditor();
+    };
+    editorCleanBtn.onclick = () => {
+        rc.editorClean();
+    };
+    editorCopyBtn.onclick = () => {
+        rc.editorCopy();
+    };
+    editorSaveBtn.onclick = () => {
+        rc.editorSave();
+    };
+    editorUndoBtn.onclick = () => {
+        rc.editorUndo();
+    };
+    editorRedoBtn.onclick = () => {
+        rc.editorRedo();
     };
     transcriptionButton.onclick = () => {
         transcription.toggle();
@@ -1383,9 +1763,6 @@ function handleButtons() {
         isRecording ? stopRecButton.click() : startRecButton.click();
     };
     startRecButton.onclick = () => {
-        if (participantsCount == 1 && !rc.peer_info.peer_audio) {
-            return userLog('warning', '🔴 Recording requires your audio to be enabled', 'top-end', 6000);
-        }
         rc.startRecording();
     };
     stopRecButton.onclick = () => {
@@ -1415,16 +1792,28 @@ function handleButtons() {
         if (isPushToTalkActive) return;
         setAudioButtonsDisabled(true);
         if (!isEnumerateAudioDevices) await initEnumerateAudioDevices();
-        rc.produce(RoomClient.mediaType.audio, microphoneSelect.value);
+
+        const producerExist = rc.producerExist(RoomClient.mediaType.audio);
+        console.log('START AUDIO producerExist --->', producerExist);
+
+        producerExist
+            ? await rc.resumeProducer(RoomClient.mediaType.audio)
+            : await rc.produce(RoomClient.mediaType.audio, microphoneSelect.value);
+
         rc.updatePeerInfo(peer_name, socket.id, 'audio', true);
-        // rc.resumeProducer(RoomClient.mediaType.audio);
     };
-    stopAudioButton.onclick = () => {
+    stopAudioButton.onclick = async () => {
         if (isPushToTalkActive) return;
         setAudioButtonsDisabled(true);
-        rc.closeProducer(RoomClient.mediaType.audio);
+
+        const producerExist = rc.producerExist(RoomClient.mediaType.audio);
+        console.log('STOP AUDIO producerExist --->', producerExist);
+
+        producerExist
+            ? await rc.pauseProducer(RoomClient.mediaType.audio)
+            : await rc.closeProducer(RoomClient.mediaType.audio);
+
         rc.updatePeerInfo(peer_name, socket.id, 'audio', false);
-        // rc.pauseProducer(RoomClient.mediaType.audio);
     };
     startVideoButton.onclick = async () => {
         const moderator = rc.getModerator();
@@ -1433,23 +1822,45 @@ function handleButtons() {
         }
         setVideoButtonsDisabled(true);
         if (!isEnumerateVideoDevices) await initEnumerateVideoDevices();
-        rc.produce(RoomClient.mediaType.video, videoSelect.value);
-        // rc.resumeProducer(RoomClient.mediaType.video);
+        await rc.produce(RoomClient.mediaType.video, videoSelect.value);
+        // await rc.resumeProducer(RoomClient.mediaType.video);
     };
     stopVideoButton.onclick = () => {
         setVideoButtonsDisabled(true);
         rc.closeProducer(RoomClient.mediaType.video);
-        // rc.pauseProducer(RoomClient.mediaType.video);
+        // await rc.pauseProducer(RoomClient.mediaType.video);
     };
-    startScreenButton.onclick = () => {
+    startScreenButton.onclick = async () => {
         const moderator = rc.getModerator();
         if (moderator.screen_cant_share) {
             return userLog('warning', 'The moderator does not allow you to share the screen', 'top-end', 6000);
         }
-        rc.produce(RoomClient.mediaType.screen);
+        await rc.produce(RoomClient.mediaType.screen);
     };
     stopScreenButton.onclick = () => {
         rc.closeProducer(RoomClient.mediaType.screen);
+    };
+    copyRtmpUrlButton.onclick = () => {
+        rc.copyRTMPUrl(rtmpLiveUrl.value);
+    };
+    startRtmpButton.onclick = () => {
+        if (rc.selectedRtmpFilename == '') {
+            userLog('warning', 'Please select the Video file to stream', 'top-end', 6000);
+            return;
+        }
+        rc.startRTMP();
+    };
+    stopRtmpButton.onclick = () => {
+        rc.stopRTMP();
+    };
+    streamerRtmpButton.onclick = () => {
+        rc.openRTMPStreamer();
+    };
+    startRtmpURLButton.onclick = () => {
+        rc.startRTMPfromURL(rtmpStreamURL.value);
+    };
+    stopRtmpURLButton.onclick = () => {
+        rc.stopRTMPfromURL();
     };
     fileShareButton.onclick = () => {
         rc.selectFileToShare(socket.id, true);
@@ -1463,11 +1874,17 @@ function handleButtons() {
     sendAbortBtn.onclick = () => {
         rc.abortFileTransfer();
     };
+    receiveAbortBtn.onclick = () => {
+        rc.abortReceiveFileTransfer();
+    };
     receiveHideBtn.onclick = () => {
         rc.hideFileTransfer();
     };
     whiteboardButton.onclick = () => {
         toggleWhiteboard();
+    };
+    snapshotRoomButton.onclick = () => {
+        rc.snapshotRoom();
     };
     whiteboardPencilBtn.onclick = () => {
         whiteboardIsDrawingMode(true);
@@ -1514,12 +1931,14 @@ function handleButtons() {
     whiteboardCleanBtn.onclick = () => {
         confirmClearBoard();
     };
-    whiteboardLockButton.onchange = () => {
-        wbIsLock = !wbIsLock;
-        whiteboardAction(getWhiteboardAction(wbIsLock ? 'lock' : 'unlock'));
-    };
     whiteboardCloseBtn.onclick = () => {
         whiteboardAction(getWhiteboardAction('close'));
+    };
+    whiteboardLockBtn.onclick = () => {
+        toggleLockUnlockWhiteboard();
+    };
+    whiteboardUnlockBtn.onclick = () => {
+        toggleLockUnlockWhiteboard();
     };
     participantsSaveBtn.onclick = () => {
         saveRoomPeers();
@@ -1542,6 +1961,9 @@ function handleButtons() {
     aboutButton.onclick = () => {
         showAbout();
     };
+    // restartICE.onclick = async () => {
+    //     await rc.restartIce();
+    // };
 }
 
 // ####################################################
@@ -1559,6 +1981,7 @@ function setButtonsInit() {
     if (!isAudioAllowed) hide(initAudioButton);
     if (!isVideoAllowed) hide(initVideoButton);
     if (!isAudioAllowed || !isVideoAllowed) hide(initAudioVideoButton);
+    if ((!isAudioAllowed && !isVideoAllowed) || DetectRTC.isMobileDevice) hide(initVideoAudioRefreshButton);
     isAudioVideoAllowed = isAudioAllowed && isVideoAllowed;
 }
 
@@ -1669,7 +2092,7 @@ async function changeCamera(deviceId) {
             aspectRatio: 1.777,
         },
     };
-    navigator.mediaDevices
+    await navigator.mediaDevices
         .getUserMedia(videoConstraints)
         .then((camStream) => {
             initVideo.className = 'mirror';
@@ -1682,10 +2105,93 @@ async function changeCamera(deviceId) {
             checkInitConfig();
             handleCameraMirror(initVideo);
         })
-        .catch((err) => {
-            console.error('[Error] changeCamera', err);
-            userLog('error', 'Error while swapping camera' + err, 'top-end');
+        .catch((error) => {
+            console.error('[Error] changeCamera', error);
+            handleMediaError('video/audio', error, '/');
         });
+}
+
+// ####################################################
+// HANDLE MEDIA ERROR
+// ####################################################
+
+function handleMediaError(mediaType, err, redirectURL = false) {
+    sound('alert');
+
+    let errMessage = err;
+    let getUserMediaError = true;
+
+    switch (err.name) {
+        case 'NotFoundError':
+        case 'DevicesNotFoundError':
+            errMessage = 'Required track is missing';
+            break;
+        case 'NotReadableError':
+        case 'TrackStartError':
+            errMessage = 'Already in use';
+            break;
+        case 'OverconstrainedError':
+        case 'ConstraintNotSatisfiedError':
+            errMessage = 'Constraints cannot be satisfied by available devices';
+            break;
+        case 'NotAllowedError':
+        case 'PermissionDeniedError':
+            errMessage = 'Permission denied in browser';
+            break;
+        case 'TypeError':
+            errMessage = 'Empty constraints object';
+            break;
+        default:
+            getUserMediaError = false;
+            break;
+    }
+
+    let html = `
+    <ul style="text-align: left">
+        <li>Media type: ${mediaType}</li>
+        <li>Error name: ${err.name}</li>
+        <li>
+            <p>Error message:</p>
+            <p style="color: red">${errMessage}</p>
+        </li>`;
+
+    if (getUserMediaError) {
+        html += `
+        <li>Common: <a href="https://blog.addpipe.com/common-getusermedia-errors" target="_blank">getUserMedia errors</a></li>`;
+    }
+    html += `
+        </ul>
+    `;
+
+    popupHtmlMessage(null, image.forbidden, 'Access denied', html, 'center', redirectURL);
+
+    throw new Error(
+        `Access denied for ${mediaType} device [${err.name}]: ${errMessage} check the common getUserMedia errors: https://blog.addpipe.com/common-getusermedia-errors/`,
+    );
+}
+
+function popupHtmlMessage(icon, imageUrl, title, html, position, redirectURL = false, reloadPage = false) {
+    Swal.fire({
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        background: swalBackground,
+        position: position,
+        icon: icon,
+        imageUrl: imageUrl,
+        title: title,
+        html: html,
+        showClass: { popup: 'animate__animated animate__fadeInDown' },
+        hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (redirectURL) {
+                return openURL(redirectURL);
+            }
+            if (reloadPage) {
+                location.href = location.href;
+            }
+        }
+    });
 }
 
 async function toggleScreenSharing() {
@@ -1696,8 +2202,12 @@ async function toggleScreenSharing() {
     }
     joinRoomWithScreen = !joinRoomWithScreen;
     if (joinRoomWithScreen) {
-        navigator.mediaDevices
-            .getDisplayMedia({ audio: true, video: true })
+        const defaultFrameRate = { ideal: 30 };
+        const selectedValue = getId('videoFps').options[localStorageSettings.screen_fps].value;
+        const customFrameRate = parseInt(selectedValue, 10);
+        const frameRate = selectedValue == 'max' ? defaultFrameRate : customFrameRate;
+        await navigator.mediaDevices
+            .getDisplayMedia({ audio: true, video: { frameRate: frameRate } })
             .then((screenStream) => {
                 if (initVideo.classList.contains('mirror')) {
                     initVideo.classList.toggle('mirror');
@@ -1710,9 +2220,10 @@ async function toggleScreenSharing() {
                 disable(initVideoSelect, true);
                 disable(initVideoButton, true);
                 disable(initAudioVideoButton, true);
+                disable(initVideoAudioRefreshButton, true);
             })
-            .catch((err) => {
-                console.error('[Error] toggleScreenSharing', err);
+            .catch((error) => {
+                console.error('[Error] toggleScreenSharing', error);
                 joinRoomWithScreen = false;
                 return checkInitVideo(isVideoAllowed);
             });
@@ -1723,12 +2234,12 @@ async function toggleScreenSharing() {
         disable(initVideoSelect, false);
         disable(initVideoButton, false);
         disable(initAudioVideoButton, false);
+        disable(initVideoAudioRefreshButton, false);
     }
 }
 
 function handleCameraMirror(video) {
-    const isDesktopDevice = !DetectRTC.isMobileDevice && !isTabletDevice && !isIPadDevice;
-    if (isDesktopDevice) {
+    if (isDesktopDevice()) {
         // Desktop devices...
         if (!video.classList.contains('mirror')) {
             video.classList.toggle('mirror');
@@ -1769,42 +2280,42 @@ function handleSelects() {
         rc.changeAudioDestination();
         refreshLsDevices();
     };
-    switchPushToTalk.onchange = (e) => {
+    switchPushToTalk.onchange = async (e) => {
         const producerExist = rc.producerExist(RoomClient.mediaType.audio);
         if (!producerExist && !isPushToTalkActive) {
             console.log('Push-to-talk: start audio producer');
             setAudioButtonsDisabled(true);
             if (!isEnumerateAudioDevices) initEnumerateAudioDevices();
-            rc.produce(RoomClient.mediaType.audio, microphoneSelect.value);
-            setTimeout(function () {
-                rc.pauseProducer(RoomClient.mediaType.audio);
+            await rc.produce(RoomClient.mediaType.audio, microphoneSelect.value);
+            setTimeout(async function () {
+                await rc.pauseProducer(RoomClient.mediaType.audio);
                 rc.updatePeerInfo(peer_name, socket.id, 'audio', false);
             }, 1000);
         }
         isPushToTalkActive = !isPushToTalkActive;
         if (producerExist && !isPushToTalkActive) {
             console.log('Push-to-talk: resume audio producer');
-            rc.resumeProducer(RoomClient.mediaType.audio);
+            await rc.resumeProducer(RoomClient.mediaType.audio);
             rc.updatePeerInfo(peer_name, socket.id, 'audio', true);
         }
         e.target.blur(); // Removes focus from the element
         rc.roomMessage('ptt', isPushToTalkActive);
         console.log(`Push-to-talk enabled: ${isPushToTalkActive}`);
     };
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', async (e) => {
         if (!isPushToTalkActive) return;
         if (e.code === 'Space') {
             if (isSpaceDown) return;
-            rc.resumeProducer(RoomClient.mediaType.audio);
+            await rc.resumeProducer(RoomClient.mediaType.audio);
             rc.updatePeerInfo(peer_name, socket.id, 'audio', true);
             isSpaceDown = true;
             console.log('Push-to-talk: audio resumed');
         }
     });
-    document.addEventListener('keyup', (e) => {
+    document.addEventListener('keyup', async (e) => {
         if (!isPushToTalkActive) return;
         if (e.code === 'Space') {
-            rc.pauseProducer(RoomClient.mediaType.audio);
+            await rc.pauseProducer(RoomClient.mediaType.audio);
             rc.updatePeerInfo(peer_name, socket.id, 'audio', false);
             isSpaceDown = false;
             console.log('Push-to-talk: audio paused');
@@ -1831,6 +2342,11 @@ function handleSelects() {
         rc.roomMessage('pitchBar', isPitchBarEnabled);
         localStorageSettings.pitch_bar = isPitchBarEnabled;
         lS.setSettings(localStorageSettings);
+        e.target.blur();
+    };
+    switchVideoMirror.onchange = (e) => {
+        rc.toggleVideoMirror();
+        rc.roomMessage('toggleVideoMirror', e.currentTarget.checked);
         e.target.blur();
     };
     switchSounds.onchange = (e) => {
@@ -1905,7 +2421,24 @@ function handleSelects() {
         lS.setSettings(localStorageSettings);
         e.target.blur();
     };
+    switchServerRecording.onchange = (e) => {
+        rc.recording.recSyncServerRecording = e.currentTarget.checked;
+        rc.roomMessage('recSyncServer', rc.recording.recSyncServerRecording);
+        localStorageSettings.rec_server = rc.recording.recSyncServerRecording;
+        lS.setSettings(localStorageSettings);
+        e.target.blur();
+    };
     // styling
+    keepCustomTheme.onchange = (e) => {
+        themeCustom.keep = e.currentTarget.checked;
+        selectTheme.disabled = themeCustom.keep;
+        rc.roomMessage('customThemeKeep', themeCustom.keep);
+        localStorageSettings.theme_custom = themeCustom.keep;
+        localStorageSettings.theme_color = themeCustom.color;
+        lS.setSettings(localStorageSettings);
+        setTheme();
+        e.target.blur();
+    };
     BtnAspectRatio.onchange = () => {
         setAspectRatio(BtnAspectRatio.value);
     };
@@ -1951,14 +2484,6 @@ function handleSelects() {
         lS.setSettings(localStorageSettings);
         e.target.blur();
     };
-    // transcript
-    transcriptPersistentMode.onchange = (e) => {
-        transcription.isPersistentMode = e.currentTarget.checked;
-        rc.roomMessage('transcriptIsPersistentMode', transcription.isPersistentMode);
-        localStorageSettings.transcript_persistent_mode = transcription.isPersistentMode;
-        lS.setSettings(localStorageSettings);
-        e.target.blur();
-    };
     transcriptShowOnMsg.onchange = (e) => {
         transcription.showOnMessage = e.currentTarget.checked;
         rc.roomMessage('transcriptShowOnMsg', transcription.showOnMessage);
@@ -1978,7 +2503,20 @@ function handleSelects() {
         wbIsBgTransparent = !wbIsBgTransparent;
         wbIsBgTransparent ? wbCanvasBackgroundColor('rgba(0, 0, 0, 0.100)') : setTheme();
     };
+    whiteboardGridBtn.onclick = (e) => {
+        toggleCanvasGrid();
+    };
     // room moderator rules
+    switchEveryonePrivacy.onchange = (e) => {
+        const videoStartPrivacy = e.currentTarget.checked;
+        isVideoPrivacyActive = !videoStartPrivacy;
+        rc.toggleVideoPrivacyMode();
+        rc.updateRoomModerator({ type: 'video_start_privacy', status: videoStartPrivacy });
+        rc.roomMessage('video_start_privacy', videoStartPrivacy);
+        localStorageSettings.moderator_video_start_privacy = videoStartPrivacy;
+        lS.setSettings(localStorageSettings);
+        e.target.blur();
+    };
     switchEveryoneMute.onchange = (e) => {
         const audioStartMuted = e.currentTarget.checked;
         rc.updateRoomModerator({ type: 'audio_start_muted', status: audioStartMuted });
@@ -2032,6 +2570,13 @@ function handleSelects() {
         rc.updateRoomModerator({ type: 'chat_cant_chatgpt', status: chatCantChatGPT });
         rc.roomMessage('chat_cant_chatgpt', chatCantChatGPT);
         localStorageSettings.moderator_chat_cant_chatgpt = chatCantChatGPT;
+        lS.setSettings(localStorageSettings);
+        e.target.blur();
+    };
+    switchDisconnectAllOnLeave.onchange = (e) => {
+        const disconnectAll = e.currentTarget.checked;
+        rc.roomMessage('disconnect_all_on_leave', disconnectAll);
+        localStorageSettings.moderator_disconnect_all_on_leave = disconnectAll;
         lS.setSettings(localStorageSettings);
         e.target.blur();
     };
@@ -2152,7 +2697,7 @@ function handleRoomEmojiPicker() {
     };
 
     function sendEmojiToRoom(data) {
-        console.log('Selected Emoji:', data.native);
+        console.log('Selected Emoji', data.native);
         const cmd = {
             type: 'roomEmoji',
             peer_name: peer_name,
@@ -2178,18 +2723,61 @@ function handleRoomEmojiPicker() {
 }
 
 // ####################################################
+// ROOM EDITOR
+// ####################################################
+
+function handleEditor() {
+    const toolbarOptions = [
+        [{ header: [1, 2, 3, false] }, { align: [] }, { background: [] }],
+        ['bold', 'italic', 'underline', 'strike', 'link', 'image', 'code-block'],
+        [{ list: 'ordered' }, { list: 'bullet' }, { list: 'check' }],
+        [{ indent: '+1' }, { indent: '-1' }],
+        ['clean'], // Custom button to clear formatting
+        //...
+    ];
+
+    quill = new Quill('#editor', {
+        modules: {
+            toolbar: {
+                container: toolbarOptions,
+            },
+            syntax: true,
+        },
+        theme: 'snow',
+    });
+
+    applySyntaxHighlighting();
+
+    quill.on('text-change', (delta, oldDelta, source) => {
+        if (!isPresenter && rc.editorIsLocked()) {
+            return;
+        }
+        // console.log('text-change', { delta, oldDelta, source });
+        applySyntaxHighlighting();
+        if (rc.thereAreParticipants() && source === 'user') {
+            socket.emit('editorChange', delta);
+        }
+    });
+}
+
+function applySyntaxHighlighting() {
+    const codeBlocks = document.querySelectorAll('.ql-syntax');
+    codeBlocks.forEach((block) => {
+        hljs.highlightElement(block);
+    });
+}
+
+// ####################################################
 // LOAD SETTINGS FROM LOCAL STORAGE
 // ####################################################
 
 function loadSettingsFromLocalStorage() {
     rc.showChatOnMessage = localStorageSettings.show_chat_on_msg;
-    transcription.isPersistentMode = localStorageSettings.transcript_persistent_mode;
     transcription.showOnMessage = localStorageSettings.transcript_show_on_msg;
     rc.speechInMessages = localStorageSettings.speech_in_msg;
     isPitchBarEnabled = localStorageSettings.pitch_bar;
     isSoundEnabled = localStorageSettings.sounds;
     showChatOnMsg.checked = rc.showChatOnMessage;
-    transcriptPersistentMode.checked = transcription.isPersistentMode;
     transcriptShowOnMsg.checked = transcription.showOnMessage;
     speechIncomingMsg.checked = rc.speechInMessages;
     switchPitchBar.checked = isPitchBarEnabled;
@@ -2198,6 +2786,12 @@ function loadSettingsFromLocalStorage() {
 
     recPrioritizeH264 = localStorageSettings.rec_prioritize_h264;
     switchH264Recording.checked = recPrioritizeH264;
+
+    switchServerRecording.checked = localStorageSettings.rec_server;
+
+    keepCustomTheme.checked = themeCustom.keep;
+    selectTheme.disabled = themeCustom.keep;
+    themeCustom.input.value = themeCustom.color;
 
     switchAutoGainControl.checked = localStorageSettings.mic_auto_gain_control;
     switchEchoCancellation.checked = localStorageSettings.mic_echo_cancellations;
@@ -2284,11 +2878,14 @@ function handleRoomClientEvents() {
         console.log('Room event: Client pause audio');
         hide(stopAudioButton);
         show(startAudioButton);
+        setColor(startAudioButton, 'red');
+        setAudioButtonsDisabled(false);
     });
     rc.on(RoomClient.EVENTS.resumeAudio, () => {
         console.log('Room event: Client resume audio');
         hide(startAudioButton);
         show(stopAudioButton);
+        setAudioButtonsDisabled(false);
     });
     rc.on(RoomClient.EVENTS.stopAudio, () => {
         console.log('Room event: Client stop audio');
@@ -2303,17 +2900,22 @@ function handleRoomClientEvents() {
         show(stopVideoButton);
         setColor(startVideoButton, 'red');
         setVideoButtonsDisabled(false);
+        switchVideoMirror.disabled = false;
         // if (isParticipantsListOpen) getRoomParticipants();
     });
     rc.on(RoomClient.EVENTS.pauseVideo, () => {
         console.log('Room event: Client pause video');
         hide(stopVideoButton);
         show(startVideoButton);
+        setColor(startVideoButton, 'red');
+        setVideoButtonsDisabled(false);
     });
     rc.on(RoomClient.EVENTS.resumeVideo, () => {
         console.log('Room event: Client resume video');
         hide(startVideoButton);
         show(stopVideoButton);
+        setVideoButtonsDisabled(false);
+        isVideoPrivacyActive = false;
     });
     rc.on(RoomClient.EVENTS.stopVideo, () => {
         console.log('Room event: Client stop video');
@@ -2321,6 +2923,7 @@ function handleRoomClientEvents() {
         show(startVideoButton);
         setVideoButtonsDisabled(false);
         isVideoPrivacyActive = false;
+        switchVideoMirror.disabled = true;
         // if (isParticipantsListOpen) getRoomParticipants();
     });
     rc.on(RoomClient.EVENTS.startScreen, () => {
@@ -2331,9 +2934,13 @@ function handleRoomClientEvents() {
     });
     rc.on(RoomClient.EVENTS.pauseScreen, () => {
         console.log('Room event: Client pause screen');
+        hide(startScreenButton);
+        show(stopScreenButton);
     });
     rc.on(RoomClient.EVENTS.resumeScreen, () => {
         console.log('Room event: Client resume screen');
+        hide(stopScreenButton);
+        show(startScreenButton);
     });
     rc.on(RoomClient.EVENTS.stopScreen, () => {
         console.log('Room event: Client stop screen');
@@ -2374,9 +2981,10 @@ function handleRoomClientEvents() {
                 rc.saveRecording('Room event: host only recording enabled, going to stop recording');
             }
             hide(startRecButton);
-            hide(roomRecording);
             hide(recordingImage);
+            hide(roomHostOnlyRecording);
             hide(roomRecordingOptions);
+            hide(roomRecordingServer);
             show(recordingMessage);
             hostOnlyRecording = true;
         }
@@ -2386,11 +2994,40 @@ function handleRoomClientEvents() {
             console.log('Room event: host only recording disabled');
             show(startRecButton);
             show(recordingImage);
-            show(roomRecordingOptions);
-            hide(roomRecording);
+            hide(roomHostOnlyRecording);
             hide(recordingMessage);
             hostOnlyRecording = false;
         }
+    });
+    rc.on(RoomClient.EVENTS.startRTMP, () => {
+        console.log('Room event: RTMP started');
+        hide(startRtmpButton);
+        show(stopRtmpButton);
+    });
+    rc.on(RoomClient.EVENTS.stopRTMP, () => {
+        console.log('Room event: RTMP stopped');
+        hide(stopRtmpButton);
+        show(startRtmpButton);
+    });
+    rc.on(RoomClient.EVENTS.endRTMP, () => {
+        console.log('Room event: RTMP ended');
+        hide(stopRtmpButton);
+        show(startRtmpButton);
+    });
+    rc.on(RoomClient.EVENTS.startRTMPfromURL, () => {
+        console.log('Room event: RTMP from URL started');
+        hide(startRtmpURLButton);
+        show(stopRtmpURLButton);
+    });
+    rc.on(RoomClient.EVENTS.stopRTMPfromURL, () => {
+        console.log('Room event: RTMP from URL stopped');
+        hide(stopRtmpURLButton);
+        show(startRtmpURLButton);
+    });
+    rc.on(RoomClient.EVENTS.endRTMPfromURL, () => {
+        console.log('Room event: RTMP from URL ended');
+        hide(stopRtmpURLButton);
+        show(startRtmpURLButton);
     });
     rc.on(RoomClient.EVENTS.exitRoom, () => {
         console.log('Room event: Client leave room');
@@ -2475,7 +3112,6 @@ function saveObjToJsonFile(dataObj, name) {
     a.click();
     setTimeout(() => {
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
     }, 100);
     sound('download');
 }
@@ -2485,6 +3121,13 @@ function getDataTimeString() {
     const date = d.toISOString().split('T')[0];
     const time = d.toTimeString().split(' ')[0];
     return `${date}-${time}`;
+}
+
+function getDataTimeStringFormat() {
+    const d = new Date();
+    const date = d.toISOString().split('T')[0].replace(/-/g, '_');
+    const time = d.toTimeString().split(' ')[0].replace(/:/g, '_');
+    return `${date}_${time}`;
 }
 
 function getUUID() {
@@ -2508,6 +3151,7 @@ function showButtons() {
         return;
     toggleClassElements('videoMenuBar', 'inline');
     control.style.display = 'flex';
+    bottomButtons.style.display = 'flex';
     isButtonsVisible = true;
 }
 
@@ -2515,6 +3159,7 @@ function checkButtonsBar() {
     if (!isButtonsBarOver) {
         toggleClassElements('videoMenuBar', 'none');
         control.style.display = 'none';
+        bottomButtons.style.display = 'none';
         isButtonsVisible = false;
     }
     setTimeout(() => {
@@ -2641,25 +3286,19 @@ function setupWhiteboardCanvas() {
 }
 
 function setupWhiteboardCanvasSize() {
-    let optimalSize = [wbWidth, wbHeight];
-    let scaleFactorX = window.innerWidth / optimalSize[0];
-    let scaleFactorY = window.innerHeight / optimalSize[1];
-    if (scaleFactorX < scaleFactorY && scaleFactorX < 1) {
-        wbCanvas.setWidth(optimalSize[0] * scaleFactorX);
-        wbCanvas.setHeight(optimalSize[1] * scaleFactorX);
-        wbCanvas.setZoom(scaleFactorX);
-        setWhiteboardSize(optimalSize[0] * scaleFactorX, optimalSize[1] * scaleFactorX);
-    } else if (scaleFactorX > scaleFactorY && scaleFactorY < 1) {
-        wbCanvas.setWidth(optimalSize[0] * scaleFactorY);
-        wbCanvas.setHeight(optimalSize[1] * scaleFactorY);
-        wbCanvas.setZoom(scaleFactorY);
-        setWhiteboardSize(optimalSize[0] * scaleFactorY, optimalSize[1] * scaleFactorY);
-    } else {
-        wbCanvas.setWidth(optimalSize[0]);
-        wbCanvas.setHeight(optimalSize[1]);
-        wbCanvas.setZoom(1);
-        setWhiteboardSize(optimalSize[0], optimalSize[1]);
-    }
+    const optimalSize = [wbWidth, wbHeight];
+    const scaleFactorX = window.innerWidth / optimalSize[0];
+    const scaleFactorY = window.innerHeight / optimalSize[1];
+    const scaleFactor = Math.min(scaleFactorX, scaleFactorY, 1);
+
+    const newWidth = optimalSize[0] * scaleFactor;
+    const newHeight = optimalSize[1] * scaleFactor;
+
+    wbCanvas.setWidth(newWidth);
+    wbCanvas.setHeight(newHeight);
+    wbCanvas.setZoom(scaleFactor);
+    setWhiteboardSize(newWidth, newHeight);
+
     wbCanvas.calcOffset();
     wbCanvas.renderAll();
 }
@@ -2667,6 +3306,51 @@ function setupWhiteboardCanvasSize() {
 function setWhiteboardSize(w, h) {
     document.documentElement.style.setProperty('--wb-width', w);
     document.documentElement.style.setProperty('--wb-height', h);
+}
+
+function drawCanvasGrid() {
+    const width = wbCanvas.getWidth();
+    const height = wbCanvas.getHeight();
+
+    removeCanvasGrid();
+
+    // Draw vertical lines
+    for (let i = 0; i <= width; i += wbGridSize) {
+        wbGridLines.push(createGridLine(i, 0, i, height));
+    }
+    // Draw horizontal lines
+    for (let i = 0; i <= height; i += wbGridSize) {
+        wbGridLines.push(createGridLine(0, i, width, i));
+    }
+
+    // Create a group for grid lines and send it to the back
+    const gridGroup = new fabric.Group(wbGridLines, { selectable: false, evented: false });
+    wbCanvas.add(gridGroup);
+    gridGroup.sendToBack();
+    wbCanvas.renderAll();
+}
+
+function createGridLine(x1, y1, x2, y2) {
+    return new fabric.Line([x1, y1, x2, y2], {
+        stroke: wbStroke,
+        selectable: false,
+        evented: false,
+    });
+}
+
+function removeCanvasGrid() {
+    wbGridLines.forEach((line) => {
+        line.set({ stroke: wbGridVisible ? wbStroke : 'rgba(255, 255, 255, 0)' });
+        wbCanvas.remove(line);
+    });
+    wbGridLines = [];
+    wbCanvas.renderAll();
+}
+
+function toggleCanvasGrid() {
+    wbGridVisible = !wbGridVisible;
+    wbGridVisible ? drawCanvasGrid() : removeCanvasGrid();
+    wbCanvasToJson();
 }
 
 function setWhiteboardBgColor(color) {
@@ -2722,75 +3406,10 @@ function whiteboardAddObj(type) {
             });
             break;
         case 'imgFile':
-            Swal.fire({
-                allowOutsideClick: false,
-                background: swalBackground,
-                position: 'center',
-                title: 'Select the image',
-                input: 'file',
-                inputAttributes: {
-                    accept: wbImageInput,
-                    'aria-label': 'Select the image',
-                },
-                showDenyButton: true,
-                confirmButtonText: `OK`,
-                denyButtonText: `Cancel`,
-                showClass: { popup: 'animate__animated animate__fadeInDown' },
-                hideClass: { popup: 'animate__animated animate__fadeOutUp' },
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    let wbCanvasImg = result.value;
-                    if (wbCanvasImg && wbCanvasImg.size > 0) {
-                        let reader = new FileReader();
-                        reader.onload = function (event) {
-                            let imgObj = new Image();
-                            imgObj.src = event.target.result;
-                            imgObj.onload = function () {
-                                let image = new fabric.Image(imgObj);
-                                image.set({ top: 0, left: 0 }).scale(0.3);
-                                addWbCanvasObj(image);
-                            };
-                        };
-                        reader.readAsDataURL(wbCanvasImg);
-                    } else {
-                        userLog('error', 'File not selected or empty', 'top-end');
-                    }
-                }
-            });
+            setupFileSelection('Select the image', wbImageInput, renderImageToCanvas);
             break;
         case 'pdfFile':
-            Swal.fire({
-                allowOutsideClick: false,
-                background: swalBackground,
-                position: 'center',
-                title: 'Select the PDF',
-                input: 'file',
-                inputAttributes: {
-                    accept: wbPdfInput,
-                    'aria-label': 'Select the PDF',
-                },
-                showDenyButton: true,
-                confirmButtonText: `OK`,
-                denyButtonText: `Cancel`,
-                showClass: { popup: 'animate__animated animate__fadeInDown' },
-                hideClass: { popup: 'animate__animated animate__fadeOutUp' },
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    let wbCanvasPdf = result.value;
-                    if (wbCanvasPdf && wbCanvasPdf.size > 0) {
-                        let reader = new FileReader();
-                        reader.onload = async function (event) {
-                            wbCanvas.requestRenderAll();
-                            await pdfToImage(event.target.result, wbCanvas);
-                            whiteboardIsDrawingMode(false);
-                            wbCanvasToJson();
-                        };
-                        reader.readAsDataURL(wbCanvasPdf);
-                    } else {
-                        userLog('error', 'File not selected or empty', 'top-end');
-                    }
-                }
-            });
+            setupFileSelection('Select the PDF', wbPdfInput, renderPdfToCanvas);
             break;
         case 'text':
             const text = new fabric.IText('Lorem Ipsum', {
@@ -2851,6 +3470,106 @@ function whiteboardAddObj(type) {
     }
 }
 
+function setupFileSelection(title, accept, renderToCanvas) {
+    Swal.fire({
+        allowOutsideClick: false,
+        background: swalBackground,
+        position: 'center',
+        title: title,
+        input: 'file',
+        html: `
+        <div id="dropArea">
+            <p>Drag and drop your file here</p>
+        </div>
+        `,
+        inputAttributes: {
+            accept: accept,
+            'aria-label': title,
+        },
+        didOpen: () => {
+            const dropArea = document.getElementById('dropArea');
+            dropArea.addEventListener('dragenter', handleDragEnter);
+            dropArea.addEventListener('dragover', handleDragOver);
+            dropArea.addEventListener('dragleave', handleDragLeave);
+            dropArea.addEventListener('drop', handleDrop);
+        },
+        showDenyButton: true,
+        confirmButtonText: `OK`,
+        denyButtonText: `Cancel`,
+        showClass: { popup: 'animate__animated animate__fadeInDown' },
+        hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+    }).then((result) => {
+        if (result.isConfirmed) {
+            renderToCanvas(result.value);
+        }
+    });
+
+    function handleDragEnter(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.target.style.background = 'var(--body-bg)';
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+    }
+
+    function handleDragLeave(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.target.style.background = '';
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+        e.target.style.background = '';
+    }
+
+    function handleFiles(files) {
+        if (files.length > 0) {
+            const file = files[0];
+            console.log('Selected file:', file);
+            Swal.close();
+            renderToCanvas(file);
+        }
+    }
+}
+
+function renderImageToCanvas(wbCanvasImg) {
+    if (wbCanvasImg && wbCanvasImg.size > 0) {
+        let reader = new FileReader();
+        reader.onload = function (event) {
+            let imgObj = new Image();
+            imgObj.src = event.target.result;
+            imgObj.onload = function () {
+                let image = new fabric.Image(imgObj);
+                image.set({ top: 0, left: 0 }).scale(0.3);
+                addWbCanvasObj(image);
+            };
+        };
+        reader.readAsDataURL(wbCanvasImg);
+    }
+}
+
+async function renderPdfToCanvas(wbCanvasPdf) {
+    if (wbCanvasPdf && wbCanvasPdf.size > 0) {
+        let reader = new FileReader();
+        reader.onload = async function (event) {
+            wbCanvas.requestRenderAll();
+            await pdfToImage(event.target.result, wbCanvas);
+            whiteboardIsDrawingMode(false);
+            wbCanvasToJson();
+        };
+        reader.readAsDataURL(wbCanvasPdf);
+    }
+}
+
 function readBlob(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -2888,8 +3607,8 @@ async function loadPDF(pdfData, pages) {
         );
         return canvases.filter((canvas) => canvas !== null);
     } catch (error) {
-        console.error('Error loading PDF:', error);
-        throw error;
+        console.error('Error loading PDF', error.message);
+        throw error.message;
     }
 }
 
@@ -2906,8 +3625,8 @@ async function pdfToImage(pdfData, canvas) {
             );
         });
     } catch (error) {
-        console.error('Error converting PDF to images:', error);
-        throw error;
+        console.error('Error converting PDF to images', error.message);
+        throw error.message;
     }
 }
 
@@ -3050,6 +3769,26 @@ function confirmClearBoard() {
     });
 }
 
+function toggleLockUnlockWhiteboard() {
+    wbIsLock = !wbIsLock;
+
+    const btnToShow = wbIsLock ? whiteboardLockBtn : whiteboardUnlockBtn;
+    const btnToHide = wbIsLock ? whiteboardUnlockBtn : whiteboardLockBtn;
+    const btnColor = wbIsLock ? 'red' : 'white';
+    const action = wbIsLock ? 'lock' : 'unlock';
+
+    show(btnToShow);
+    hide(btnToHide);
+    setColor(whiteboardLockBtn, btnColor);
+
+    whiteboardAction(getWhiteboardAction(action));
+
+    if (wbIsLock) {
+        userLog('info', 'The whiteboard is locked. \n The participants cannot interact with it.', 'top-right');
+        sound('locked');
+    }
+}
+
 function whiteboardAction(data, emit = true) {
     if (emit) {
         if (rc.thereAreParticipants()) {
@@ -3148,25 +3887,30 @@ async function getRoomParticipants() {
 }
 
 function getParticipantsList(peers) {
+    let li = '';
+
+    const chatGPT = BUTTONS.chat.chatGPT !== undefined ? BUTTONS.chat.chatGPT : true;
+
     // CHAT-GPT
-    let li = `
-    <li 
-        id="ChatGPT" 
-        data-to-id="ChatGPT"
-        data-to-name="ChatGPT"
-        class="clearfix" 
-        onclick="rc.showPeerAboutAndMessages(this.id, 'ChatGPT', event)"
-    >
-        <img 
-            src="${image.chatgpt}"
-            alt="avatar"
-        />
-        <div class="about">
-            <div class="name">ChatGPT</div>
-            <div class="status"><i class="fa fa-circle online"></i> online</div>
-        </div>
-    </li>
-    `;
+    if (chatGPT) {
+        li = `
+        <li 
+            id="ChatGPT" 
+            data-to-id="ChatGPT"
+            data-to-name="ChatGPT"
+            class="clearfix" 
+            onclick="rc.showPeerAboutAndMessages(this.id, 'ChatGPT', event)"
+        >
+            <img 
+                src="${image.chatgpt}"
+                alt="avatar"
+            />
+            <div class="about">
+                <div class="name">ChatGPT</div>
+                <div class="status"><i class="fa fa-circle online"></i> online</div>
+            </div>
+        </li>`;
+    }
 
     // ALL
     li += `
@@ -3200,11 +3944,23 @@ function getParticipantsList(peers) {
             <!-- <i class="fas fa-bars"></i> -->
             <i class="fas fa-ellipsis-vertical"></i>
             </button>
-            <ul class="dropdown-menu text-start" aria-labelledby="${socket.id}-chatDropDownMenu">
-                <li><button class="btn-sm ml5" id="sendAllButton" onclick="rc.selectFileToShare('${socket.id}', true)">${_PEER.sendFile} Share file to all</button></li>
-                <li><button class="btn-sm ml5" id="sendVideoToAll" onclick="rc.shareVideo('all');">${_PEER.sendVideo} Share audio/video to all</button></li>
-                <li><button class="btn-sm ml5" id="ejectAllButton" onclick="rc.peerAction('me','${socket.id}','eject',true,true)">${_PEER.ejectPeer} Eject all participants</button></li>
-            </ul>
+            <ul class="dropdown-menu text-start" aria-labelledby="${socket.id}-chatDropDownMenu">`;
+
+        li += `<li><button class="ml5" id="muteAllParticipantsButton" onclick="rc.peerAction('me','${socket.id}','mute',true,true)">${_PEER.audioOff} Mute all participants</button></li>`;
+        li += `<li><button class="ml5" id="hideAllParticipantsButton" onclick="rc.peerAction('me','${socket.id}','hide',true,true)">${_PEER.videoOff} Hide all participants</button></li>`;
+        li += `<li><button class="ml5" id="stopAllParticipantsButton" onclick="rc.peerAction('me','${socket.id}','stop',true,true)">${_PEER.screenOff} Stop all screens sharing</button></li>`;
+
+        if (BUTTONS.participantsList.sendFileAllButton) {
+            li += `<li><button class="btn-sm ml5" id="sendAllButton" onclick="rc.selectFileToShare('${socket.id}', true)">${_PEER.sendFile} Share file to all</button></li>`;
+        }
+
+        li += `<li><button class="btn-sm ml5" id="sendVideoToAll" onclick="rc.shareVideo('all');">${_PEER.sendVideo} Share audio/video to all</button></li>`;
+
+        if (BUTTONS.participantsList.ejectAllButton) {
+            li += `<li><button class="btn-sm ml5" id="ejectAllButton" onclick="rc.peerAction('me','${socket.id}','eject',true,true)">${_PEER.ejectPeer} Eject all participants</button></li>`;
+        }
+
+        li += `</ul>
         </div>
 
         <br/>
@@ -3270,13 +4026,29 @@ function getParticipantsList(peers) {
                         <!-- <i class="fas fa-bars"></i> -->
                         <i class="fas fa-ellipsis-vertical"></i>
                         </button>
-                        <ul class="dropdown-menu text-start" aria-labelledby="${peer_id}-chatDropDownMenu">
-                            <li><button class="btn-sm ml5" id='${peer_id}___shareFile' onclick="rc.selectFileToShare('${peer_id}', false)">${peer_sendFile} Share file</button></li>
-                            <li><button class="btn-sm ml5" id="${peer_id}___sendVideoTo" onclick="rc.shareVideo('${peer_id}');">${_PEER.sendVideo} Share audio/video</button></li>
-                            <li><button class="btn-sm ml5" id='${peer_id}___geoLocation' onclick="rc.askPeerGeoLocation(this.id)">${peer_geoLocation} Get geolocation</button></li>
-                            <li><button class="btn-sm ml5" id='${peer_id}___pBan' onclick="rc.peerAction('me',this.id,'ban')">${peer_ban} Ban participant</button></li>
-                            <li><button class="btn-sm ml5" id='${peer_id}___pEject' onclick="rc.peerAction('me',this.id,'eject')">${peer_eject} Eject participant</button></li>
-                        </ul>
+                        <ul class="dropdown-menu text-start" aria-labelledby="${peer_id}-chatDropDownMenu">`;
+
+                li += `<li><button class="ml5" id='${peer_id}___pAudioMute' onclick="rc.peerAction('me',this.id,'mute')">${_PEER.audioOn} Toggle audio</button></li>`;
+                li += `<li><button class="ml5" id='${peer_id}___pVideoHide' onclick="rc.peerAction('me',this.id,'hide')">${_PEER.videoOn} Toggle video</button></li>`;
+                li += `<li><button class="ml5" id='${peer_id}___pScreenStop' onclick="rc.peerAction('me',this.id,'stop')">${_PEER.screenOn} Toggle screen</button></li>`;
+
+                if (BUTTONS.participantsList.sendFileButton) {
+                    li += `<li><button class="btn-sm ml5" id='${peer_id}___shareFile' onclick="rc.selectFileToShare('${peer_id}', false)">${peer_sendFile} Share file</button></li>`;
+                }
+
+                li += `<li><button class="btn-sm ml5" id="${peer_id}___sendVideoTo" onclick="rc.shareVideo('${peer_id}');">${_PEER.sendVideo} Share audio/video</button></li>`;
+
+                if (BUTTONS.participantsList.geoLocationButton) {
+                    li += `<li><button class="btn-sm ml5" id='${peer_id}___geoLocation' onclick="rc.askPeerGeoLocation(this.id)">${peer_geoLocation} Get geolocation</button></li>`;
+                }
+                if (BUTTONS.participantsList.banButton) {
+                    li += `<li><button class="btn-sm ml5" id='${peer_id}___pBan' onclick="rc.peerAction('me',this.id,'ban')">${peer_ban} Ban participant</button></li>`;
+                }
+                if (BUTTONS.participantsList.ejectButton) {
+                    li += `<li><button class="btn-sm ml5" id='${peer_id}___pEject' onclick="rc.peerAction('me',this.id,'eject')">${peer_eject} Eject participant</button></li>`;
+                }
+
+                li += `</ul>
                     </div>
 
                     <br/>
@@ -3334,9 +4106,13 @@ function getParticipantsList(peers) {
                         <!-- <i class="fas fa-bars"></i> -->
                         <i class="fas fa-ellipsis-vertical"></i>
                         </button>
-                        <ul class="dropdown-menu text-start" aria-labelledby="${peer_id}-chatDropDownMenu">
-                            <li><button class="btn-sm ml5" id='${peer_id}___shareFile' onclick="rc.selectFileToShare('${peer_id}', false)">${peer_sendFile} Share file</button></li>
-                            <li><button class="btn-sm ml5" id="${peer_id}___sendVideoTo" onclick="rc.shareVideo('${peer_id}');">${_PEER.sendVideo} Share Audio/Video</button></li>
+                        <ul class="dropdown-menu text-start" aria-labelledby="${peer_id}-chatDropDownMenu">`;
+
+                    if (BUTTONS.participantsList.sendFileButton) {
+                        li += `<li><button class="btn-sm ml5" id='${peer_id}___shareFile' onclick="rc.selectFileToShare('${peer_id}', false)">${peer_sendFile} Share file</button></li>`;
+                    }
+
+                    li += `<li><button class="btn-sm ml5" id="${peer_id}___sendVideoTo" onclick="rc.shareVideo('${peer_id}');">${_PEER.sendVideo} Share Audio/Video</button></li>
                         </ul>
                     </div>
                     `;
@@ -3406,88 +4182,181 @@ function getParticipantAvatar(peerName) {
 // SET THEME
 // ####################################################
 
+function setCustomTheme() {
+    const color = themeCustom.color;
+    swalBackground = `radial-gradient(${color}, ${color})`;
+    document.documentElement.style.setProperty('--body-bg', `radial-gradient(${color}, ${color})`);
+    document.documentElement.style.setProperty('--trx-bg', `radial-gradient(${color}, ${color})`);
+    document.documentElement.style.setProperty('--msger-bg', `radial-gradient(${color}, ${color})`);
+    document.documentElement.style.setProperty('--left-msg-bg', `${color}`);
+    document.documentElement.style.setProperty('--right-msg-bg', `${color}`);
+    document.documentElement.style.setProperty('--select-bg', `${color}`);
+    document.documentElement.style.setProperty('--tab-btn-active', `${color}`);
+    document.documentElement.style.setProperty('--settings-bg', `radial-gradient(${color}, ${color})`);
+    document.documentElement.style.setProperty('--wb-bg', `radial-gradient(${color}, ${color})`);
+    // document.documentElement.style.setProperty('--btns-bg-color', `${color}`);
+    document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 0, 0, 0.7)');
+    document.body.style.background = `radial-gradient(${color}, ${color})`;
+}
+
 function setTheme() {
+    if (themeCustom.keep) return setCustomTheme();
+
     selectTheme.selectedIndex = localStorageSettings.theme;
     const theme = selectTheme.value;
     switch (theme) {
-        case 'dark':
-            swalBackground = 'radial-gradient(#393939, #000000)';
-            document.documentElement.style.setProperty('--body-bg', 'radial-gradient(#393939, #000000)');
-            document.documentElement.style.setProperty('--transcription-bg', 'radial-gradient(#393939, #000000)');
-            document.documentElement.style.setProperty('--msger-bg', 'radial-gradient(#393939, #000000)');
-            document.documentElement.style.setProperty('--left-msg-bg', '#056162');
-            document.documentElement.style.setProperty('--right-msg-bg', '#252d31');
-            document.documentElement.style.setProperty('--select-bg', '#2c2c2c');
-            document.documentElement.style.setProperty('--tab-btn-active', '#393939');
-            document.documentElement.style.setProperty('--settings-bg', 'radial-gradient(#393939, #000000)');
-            document.documentElement.style.setProperty('--wb-bg', 'radial-gradient(#393939, #000000)');
+        case 'default':
+            swalBackground = 'linear-gradient(135deg, #000000, #434343)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #000000, #434343)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #000000, #434343)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #000000, #434343)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#1a1a1a');
+            document.documentElement.style.setProperty('--right-msg-bg', '#2e2e2e');
+            document.documentElement.style.setProperty('--select-bg', '#333333');
+            document.documentElement.style.setProperty('--tab-btn-active', '#434343');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #000000, #434343)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #000000, #434343)');
             document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 0, 0, 0.7)');
-            document.body.style.background = 'radial-gradient(#393939, #000000)';
+            document.body.style.background = 'linear-gradient(135deg, #000000, #434343)';
             selectTheme.selectedIndex = 0;
             break;
-        case 'grey':
-            swalBackground = 'radial-gradient(#666, #333)';
-            document.documentElement.style.setProperty('--body-bg', 'radial-gradient(#666, #333)');
-            document.documentElement.style.setProperty('--transcription-bg', 'radial-gradient(#666, #333)');
-            document.documentElement.style.setProperty('--msger-bg', 'radial-gradient(#666, #333)');
-            document.documentElement.style.setProperty('--left-msg-bg', '#056162');
-            document.documentElement.style.setProperty('--right-msg-bg', '#252d31');
-            document.documentElement.style.setProperty('--select-bg', '#2c2c2c');
-            document.documentElement.style.setProperty('--tab-btn-active', '#666');
-            document.documentElement.style.setProperty('--settings-bg', 'radial-gradient(#666, #333)');
-            document.documentElement.style.setProperty('--wb-bg', 'radial-gradient(#797979, #000)');
-            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 0, 0, 0.7)');
-            document.body.style.background = 'radial-gradient(#666, #333)';
+        case 'dark':
+            swalBackground = 'linear-gradient(135deg, #000000, #1a1a1a)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #000000, #1a1a1a)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #000000, #1a1a1a)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #000000, #1a1a1a)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#0d0d0d');
+            document.documentElement.style.setProperty('--right-msg-bg', '#1a1a1a');
+            document.documentElement.style.setProperty('--select-bg', '#1a1a1a');
+            document.documentElement.style.setProperty('--tab-btn-active', '#1a1a1a');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #000000, #1a1a1a)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #000000, #1a1a1a)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 0, 0, 0.85)');
+            document.body.style.background = 'linear-gradient(135deg, #000000, #1a1a1a)';
             selectTheme.selectedIndex = 1;
             break;
-        case 'green':
-            swalBackground = 'radial-gradient(#003934, #001E1A)';
-            document.documentElement.style.setProperty('--body-bg', 'radial-gradient(#003934, #001E1A)');
-            document.documentElement.style.setProperty('--transcription-bg', 'radial-gradient(#003934, #001E1A)');
-            document.documentElement.style.setProperty('--msger-bg', 'radial-gradient(#003934, #001E1A)');
-            document.documentElement.style.setProperty('--left-msg-bg', '#001E1A');
-            document.documentElement.style.setProperty('--right-msg-bg', '#003934');
-            document.documentElement.style.setProperty('--select-bg', '#001E1A');
-            document.documentElement.style.setProperty('--tab-btn-active', '#003934');
-            document.documentElement.style.setProperty('--settings-bg', 'radial-gradient(#003934, #001E1A)');
-            document.documentElement.style.setProperty('--wb-bg', 'radial-gradient(#003934, #001E1A)');
-            document.documentElement.style.setProperty('--btns-bg-color', 'radial-gradient(#003934, #001E1A)');
-            document.body.style.background = 'radial-gradient(#003934, #001E1A)';
+        case 'grey':
+            swalBackground = 'linear-gradient(135deg, #1a1a1a, #4f4f4f)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #1a1a1a, #4f4f4f)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #1a1a1a, #4f4f4f)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #1a1a1a, #4f4f4f)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#2c2c2c');
+            document.documentElement.style.setProperty('--right-msg-bg', '#3f3f3f');
+            document.documentElement.style.setProperty('--select-bg', '#2a2a2a');
+            document.documentElement.style.setProperty('--tab-btn-active', '#4f4f4f');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #1a1a1a, #4f4f4f)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #1a1a1a, #4f4f4f)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 0, 0, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #1a1a1a, #4f4f4f)';
             selectTheme.selectedIndex = 2;
             break;
-        case 'blue':
-            swalBackground = 'radial-gradient(#306bac, #141B41)';
-            document.documentElement.style.setProperty('--body-bg', 'radial-gradient(#306bac, #141B41)');
-            document.documentElement.style.setProperty('--transcription-bg', 'radial-gradient(#306bac, #141B41)');
-            document.documentElement.style.setProperty('--msger-bg', 'radial-gradient(#306bac, #141B41)');
-            document.documentElement.style.setProperty('--left-msg-bg', '#141B41');
-            document.documentElement.style.setProperty('--right-msg-bg', '#306bac');
-            document.documentElement.style.setProperty('--select-bg', '#141B41');
-            document.documentElement.style.setProperty('--tab-btn-active', '#306bac');
-            document.documentElement.style.setProperty('--settings-bg', 'radial-gradient(#306bac, #141B41)');
-            document.documentElement.style.setProperty('--wb-bg', 'radial-gradient(#306bac, #141B41)');
-            document.documentElement.style.setProperty('--btns-bg-color', 'radial-gradient(#141B41, #306bac)');
-            document.body.style.background = 'radial-gradient(#306bac, #141B41)';
+        case 'green':
+            swalBackground = 'linear-gradient(135deg, #002a22, #004d40)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #002a22, #004d40)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #002a22, #004d40)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #002a22, #004d40)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#001d1a');
+            document.documentElement.style.setProperty('--right-msg-bg', '#003d2e');
+            document.documentElement.style.setProperty('--select-bg', '#002a22');
+            document.documentElement.style.setProperty('--tab-btn-active', '#004d40');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #002a22, #004d40)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #002a22, #004d40)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 42, 34, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #002a22, #004d40)';
             selectTheme.selectedIndex = 3;
             break;
-        case 'red':
-            swalBackground = 'radial-gradient(#69140E, #3C1518)';
-            document.documentElement.style.setProperty('--body-bg', 'radial-gradient(#69140E, #3C1518)');
-            document.documentElement.style.setProperty('--transcription-bg', 'radial-gradient(#69140E, #3C1518)');
-            document.documentElement.style.setProperty('--msger-bg', 'radial-gradient(#69140E, #3C1518)');
-            document.documentElement.style.setProperty('--left-msg-bg', '#3C1518');
-            document.documentElement.style.setProperty('--right-msg-bg', '#69140E');
-            document.documentElement.style.setProperty('--select-bg', '#3C1518');
-            document.documentElement.style.setProperty('--tab-btn-active', '#69140E');
-            document.documentElement.style.setProperty('--settings-bg', 'radial-gradient(#69140E, #3C1518)');
-            document.documentElement.style.setProperty('--wb-bg', 'radial-gradient(#69140E, #3C1518)');
-            document.documentElement.style.setProperty('--btns-bg-color', 'radial-gradient(#69140E, #3C1518)');
-            document.body.style.background = 'radial-gradient(#69140E, #3C1518)';
+        case 'blue':
+            swalBackground = 'linear-gradient(135deg, #00274d, #004d80)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #00274d, #004d80)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #00274d, #004d80)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #00274d, #004d80)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#001f3f');
+            document.documentElement.style.setProperty('--right-msg-bg', '#003366');
+            document.documentElement.style.setProperty('--select-bg', '#00274d');
+            document.documentElement.style.setProperty('--tab-btn-active', '#004d80');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #00274d, #004d80)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #00274d, #004d80)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(0, 39, 77, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #00274d, #004d80)';
             selectTheme.selectedIndex = 4;
+            break;
+        case 'red':
+            swalBackground = 'linear-gradient(135deg, #2a0d0d, #4d1a1a)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #2a0d0d, #4d1a1a)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #2a0d0d, #4d1a1a)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #2a0d0d, #4d1a1a)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#2b0f0f');
+            document.documentElement.style.setProperty('--right-msg-bg', '#4d1a1a');
+            document.documentElement.style.setProperty('--select-bg', '#2a0d0d');
+            document.documentElement.style.setProperty('--tab-btn-active', '#4d1a1a');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #2a0d0d, #4d1a1a)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #2a0d0d, #4d1a1a)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(42, 13, 13, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #2a0d0d, #4d1a1a)';
+            selectTheme.selectedIndex = 5;
+            break;
+        case 'purple':
+            swalBackground = 'linear-gradient(135deg, #2a001d, #4d004a)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #2a001d, #4d004a)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #2a001d, #4d004a)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #2a001d, #4d004a)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#1b0014');
+            document.documentElement.style.setProperty('--right-msg-bg', '#3e002a');
+            document.documentElement.style.setProperty('--select-bg', '#2a001d');
+            document.documentElement.style.setProperty('--tab-btn-active', '#4d004a');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #2a001d, #4d004a)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #2a001d, #4d004a)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(42, 0, 29, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #2a001d, #4d004a)';
+            selectTheme.selectedIndex = 6;
+            break;
+        case 'orange':
+            swalBackground = 'linear-gradient(135deg, #3d1a00, #ff8c00)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #3d1a00, #ff8c00)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #3d1a00, #ff8c00)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #3d1a00, #ff8c00)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#2c0f00');
+            document.documentElement.style.setProperty('--right-msg-bg', '#ff8c00');
+            document.documentElement.style.setProperty('--select-bg', '#3d1a00');
+            document.documentElement.style.setProperty('--tab-btn-active', '#ff8c00');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #3d1a00, #ff8c00)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #3d1a00, #ff8c00)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(61, 26, 0, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #3d1a00, #ff8c00)';
+            selectTheme.selectedIndex = 7;
+            break;
+        case 'pink':
+            swalBackground = 'linear-gradient(135deg, #4d001d, #ff66b2)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #4d001d, #ff66b2)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #4d001d, #ff66b2)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #4d001d, #ff66b2)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#3e0016');
+            document.documentElement.style.setProperty('--right-msg-bg', '#ff66b2');
+            document.documentElement.style.setProperty('--select-bg', '#4d001d');
+            document.documentElement.style.setProperty('--tab-btn-active', '#ff66b2');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #4d001d, #ff66b2)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #4d001d, #ff66b2)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(77, 0, 29, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #4d001d, #ff66b2)';
+            selectTheme.selectedIndex = 8;
+            break;
+        case 'yellow':
+            swalBackground = 'linear-gradient(135deg, #4d3b00, #ffc107)';
+            document.documentElement.style.setProperty('--body-bg', 'linear-gradient(135deg, #4d3b00, #ffc107)');
+            document.documentElement.style.setProperty('--trx-bg', 'linear-gradient(135deg, #4d3b00, #ffc107)');
+            document.documentElement.style.setProperty('--msger-bg', 'linear-gradient(135deg, #4d3b00, #ffc107)');
+            document.documentElement.style.setProperty('--left-msg-bg', '#3b2d00');
+            document.documentElement.style.setProperty('--right-msg-bg', '#ffc107');
+            document.documentElement.style.setProperty('--select-bg', '#4d3b00');
+            document.documentElement.style.setProperty('--tab-btn-active', '#ffc107');
+            document.documentElement.style.setProperty('--settings-bg', 'linear-gradient(135deg, #4d3b00, #ffc107)');
+            document.documentElement.style.setProperty('--wb-bg', 'linear-gradient(135deg, #4d3b00, #ffc107)');
+            document.documentElement.style.setProperty('--btns-bg-color', 'rgba(77, 59, 0, 0.7)');
+            document.body.style.background = 'linear-gradient(135deg, #4d3b00, #ffc107)';
+            selectTheme.selectedIndex = 9;
             break;
         default:
             break;
-        //...
     }
     wbIsBgTransparent = false;
     if (rc) rc.isChatBgTransparent = false;
@@ -3575,19 +4444,18 @@ function showAbout() {
         imageUrl: image.about,
         customClass: { image: 'img-about' },
         position: 'center',
-        title: 'WebRTC SFU',
+        title: 'WebRTC SFU v1.5.58',
         html: `
-        <br/>
+        <br />
         <div id="about">
             <button 
                 id="support-button" 
                 data-umami-event="Support button" 
-                class="pulsate" 
                 onclick="window.open('https://codecanyon.net/user/miroslavpejic85')">
                 <i class="fas fa-heart"></i> 
                 Support
             </button>
-            <br /><br />
+            <br /><br /><br />
             Author: <a 
                 id="linkedin-button" 
                 data-umami-event="Linkedin button" 
@@ -3601,6 +4469,10 @@ function showAbout() {
                 href="mailto:miroslav.pejic.85@gmail.com?subject=MiroTalk SFU info"> 
                 miroslav.pejic.85@gmail.com
             </a>
+            <br /><br />
+            <hr />
+            <span>&copy; 2024 MiroTalk SFU, all rights reserved</span>
+            <hr />
         </div>
         `,
         showClass: { popup: 'animate__animated animate__fadeInDown' },

@@ -42,7 +42,7 @@
     display: inline-block;
     background: transparent;
     border-radius: 10px;
-    border: var(--border);
+    /* border: var(--border); */
     box-shadow: var(--box-shadow);
     animation: show 0.4s ease;
 }
@@ -73,6 +73,7 @@
     width: var(--vmi-wh);
     height: var(--vmi-wh);
     border-radius: 50%;
+    transition: box-shadow 0.3s ease;
 }
 
 .audio {
@@ -92,7 +93,7 @@
     right: 0;
     bottom: 0;
     color: #fff;
-    font-size: 14px;
+    font-size: 10px;
     display: flex;
     align-items: center;
     padding: 5px;
@@ -146,6 +147,17 @@
     transition: all 0.3s ease-in-out;
 }
 
+.expand-video-content {
+    position: relative;
+    display: none;
+    float: right;
+    width: auto;
+}
+
+.expand-video:hover .expand-video-content {
+    display: inline-flex;
+}
+
 #videoMediaContainer video {
     position: absolute;
     margin-left: auto;
@@ -163,6 +175,7 @@
     right: 0;
     bottom: 0;
     margin: auto;
+    transition: box-shadow 0.3s ease;
 }
 
 .videoDefault {
@@ -170,6 +183,7 @@
     width: 100%;
     height: 100%;
     border-radius: '10px';
+    transition: box-shadow 0.3s ease;
 }
 
 video {
@@ -180,13 +194,20 @@ video {
     cursor: pointer;
 }
 
+#canvasAIElement {
+    width: 100%;
+    height: 100%;
+    object-fit: var(--videoObjFit);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
 video:hover {
-    opacity: 0.9;
+    filter: contrast(105%);
 }
 
 video:fullscreen {
     object-fit: contain;
-    opacity: 1;
 }
 
 .mirror {
